@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated MotionCut creator profile stored under /users/{userId}.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase user UID matching the document ID."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name from Google Sign-In."
+        },
+        "photoUrl": {
+          "type": "string",
+          "description": "Optional user profile avatar URL."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-generated creation timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-generated last updated timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "displayName", "createdAt", "updatedAt"]
+    },
+    "CloudProject": {
+      "title": "CloudProject",
+      "description": "User-owned cloud video project metadata synced with Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "title": {
+          "type": "string",
+          "description": "Project title displayed on the landing card."
+        },
+        "aspectRatioName": {
+          "type": "string",
+          "description": "AspectRatio enum name (e.g. PORTRAIT_9_16, LANDSCAPE_16_9)."
+        },
+        "aspectRatioRatioText": {
+          "type": "string",
+          "description": "Human-readable aspect ratio text (e.g. 9:16)."
+        },
+        "frameRateFps": {
+          "type": "integer",
+          "description": "Project frame rate (24, 30, or 60)."
+        },
+        "resolutionLabel": {
+          "type": "string",
+          "description": "Export resolution label (e.g. 1080p Full HD)."
+        },
+        "durationMs": {
+          "type": "integer",
+          "description": "Project timeline duration in milliseconds."
+        },
+        "thumbnailColorHex": {
+          "type": "integer",
+          "description": "Fallback thumbnail color ARGB hex as 64-bit integer."
+        },
+        "thumbnailResId": {
+          "type": "integer",
+          "description": "Optional bundled drawable resource ID for starter thumbnails."
+        },
+        "clipCount": {
+          "type": "integer",
+          "description": "Total number of clips in the project."
+        },
+        "trackCount": {
+          "type": "integer",
+          "description": "Total number of tracks in the project."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-generated creation timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-generated last modified timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "title",
+        "aspectRatioName",
+        "aspectRatioRatioText",
+        "frameRateFps",
+        "resolutionLabel",
+        "durationMs",
+        "thumbnailColorHex",
+        "clipCount",
+        "trackCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Authenticated user profile document."
+    },
+    "/users/{userId}/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/CloudProject" },
+      "description": "Per-user cloud video projects subcollection."
+    }
+  }
+}

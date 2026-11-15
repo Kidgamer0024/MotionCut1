@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">MotionCut</string>
+    <string name="dock_add">Add</string>
+    <string name="dock_ai">AI</string>
+    <string name="dock_library">Library</string>
+    <string name="dock_captions">Captions</string>
+    <string name="dock_link">Link</string>
+    <string name="dock_linked">Linked</string>
+    <string name="dock_layout">Layout</string>
+    <string name="dock_remove_bg">Remove BG</string>
+    <string name="dock_split_parts">Split into parts</string>
+    <string name="dock_upscale">Upscale</string>
+    <string name="dock_colorize">Colorize</string>
+    <string name="dock_depth_cloud">Depth (cloud)</string>
+</resources>

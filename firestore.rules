@@ -1,0 +1,170 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Entity Validators ---
+    function isValidUserProfile(data) {
+      return data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.displayName is string &&
+             data.displayName.size() >= 1 &&
+             data.displayName.size() <= 100 &&
+             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 500)) &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isValidCloudProject(data) {
+      return data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.title is string &&
+             data.title.size() >= 1 &&
+             data.title.size() <= 120 &&
+             data.aspectRatioName is string &&
+             data.aspectRatioName.size() >= 1 &&
+             data.aspectRatioName.size() <= 40 &&
+             data.aspectRatioRatioText is string &&
+             data.aspectRatioRatioText.size() >= 1 &&
+             data.aspectRatioRatioText.size() <= 20 &&
+             data.frameRateFps is int &&
+             data.frameRateFps >= 1 &&
+             data.frameRateFps <= 240 &&
+             data.resolutionLabel is string &&
+             data.resolutionLabel.size() >= 1 &&
+             data.resolutionLabel.size() <= 40 &&
+             data.durationMs is int &&
+             data.durationMs >= 0 &&
+             data.durationMs <= 86400000 &&
+             data.thumbnailColorHex is int &&
+             (!('thumbnailResId' in data) || data.thumbnailResId is int) &&
+             data.clipCount is int &&
+             data.clipCount >= 0 &&
+             data.clipCount <= 10000 &&
+             data.trackCount is int &&
+             data.trackCount >= 0 &&
+             data.trackCount <= 500 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    // --- User Profile Collection ---
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'photoUrl', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoUrl', 'updatedAt']);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // --- User Cloud Projects Subcollection ---
+      match /projects/{projectId} {
+        allow get: if isOwner(userId) && isValidId(projectId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(projectId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll([
+                           'userId',
+                           'title',
+                           'aspectRatioName',
+                           'aspectRatioRatioText',
+                           'frameRateFps',
+                           'resolutionLabel',
+                           'durationMs',
+                           'thumbnailColorHex',
+                           'clipCount',
+                           'trackCount',
+                           'createdAt',
+                           'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId',
+                           'title',
+                           'aspectRatioName',
+                           'aspectRatioRatioText',
+                           'frameRateFps',
+                           'resolutionLabel',
+                           'durationMs',
+                           'thumbnailColorHex',
+                           'thumbnailResId',
+                           'clipCount',
+                           'trackCount',
+                           'createdAt',
+                           'updatedAt'
+                         ]) &&
+                         isValidCloudProject(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(projectId) &&
+                         isValidCloudProject(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         (
+                           // Action: Rename Project
+                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'updatedAt']) ||
+                           // Action: Sync / Update Project Timeline Metadata
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'title',
+                             'aspectRatioName',
+                             'aspectRatioRatioText',
+                             'frameRateFps',
+                             'resolutionLabel',
+                             'durationMs',
+                             'thumbnailColorHex',
+                             'thumbnailResId',
+                             'clipCount',
+                             'trackCount',
+                             'updatedAt'
+                           ])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(projectId);
+      }
+    }
+  }
+}

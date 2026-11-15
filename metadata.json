@@ -1,0 +1,6 @@
+{
+  "name": "MotionCut",
+  "description": "Advanced mobile video editor combining CapCut multi-track timeline editing with Alight Motion keyframe animation, graph curves, and professional color grading wheels.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
