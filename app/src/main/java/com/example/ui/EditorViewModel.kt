@@ -100,12 +100,18 @@ class EditorViewModel(
     val cloudSyncState: StateFlow<CloudSyncState> = if (firestoreRepository != null && currentUserId != null) {
         firestoreRepository.observeCloudProjects(currentUserId)
             .onEach { cloudProjects ->
-                if (cloudProjects.isNotEmpty() || _initialSeedFinished.value) {
-                    repository.syncFromCloud(cloudProjects.map { it.toRoomEntity() })
+                val userCreatedProjects = cloudProjects.filterNot {
+                    it.id in com.example.data.SampleProjects.SEEDED_SAMPLE_IDS
+                }
+                if (userCreatedProjects.isNotEmpty() || _initialSeedFinished.value) {
+                    repository.syncFromCloud(userCreatedProjects.map { it.toRoomEntity() })
                 }
             }
             .map<List<CloudProject>, CloudSyncState> { cloudProjects ->
-                CloudSyncState.Synced(count = cloudProjects.size)
+                val userCount = cloudProjects.count {
+                    it.id !in com.example.data.SampleProjects.SEEDED_SAMPLE_IDS
+                }
+                CloudSyncState.Synced(count = userCount)
             }
             .catch { error ->
                 val firestoreError = generateSequence(error) { it.cause }
@@ -156,7 +162,7 @@ class EditorViewModel(
     val marketplaceItems: StateFlow<List<MarketplaceItem>> = repository.marketplaceItems
     val musicTracks: StateFlow<List<MusicTrack>> = repository.musicTracks
 
-    private val _selectedClipId = MutableStateFlow<String?>("clip_cyberpunk_city")
+    private val _selectedClipId = MutableStateFlow<String?>(null)
     val selectedClipId: StateFlow<String?> = _selectedClipId.asStateFlow()
 
     private val _activeToolTab = MutableStateFlow(EditorToolTab.TIMELINE)
@@ -243,7 +249,9 @@ class EditorViewModel(
                     displayName = currentUserDisplayName ?: "MotionCut Creator",
                     photoUrl = currentUserPhotoUrl
                 )
-                firestoreRepository.seedStarterProjectsIfEmpty()
+                com.example.data.SampleProjects.SEEDED_SAMPLE_IDS.forEach { sampleId ->
+                    firestoreRepository.deleteCloudProject(sampleId)
+                }
                 _initialSeedFinished.value = true
             }
         } else {

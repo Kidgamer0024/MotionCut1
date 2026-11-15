@@ -26,6 +26,12 @@ import java.util.UUID
 
 object SampleProjects {
 
+    val SEEDED_SAMPLE_IDS: Set<String> = setOf(
+        "project_cyberpunk_neon",
+        "project_drone_cinema",
+        "project_sunset_skater"
+    )
+
     fun createCyberpunkProject(): Project {
         val projectId = "project_cyberpunk_neon"
         val mainVideoTrackId = "track_main_cyberpunk"

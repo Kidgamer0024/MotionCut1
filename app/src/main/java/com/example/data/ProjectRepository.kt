@@ -34,17 +34,38 @@ import java.util.UUID
 
 class ProjectRepository(
     private val projectDao: ProjectDao? = null,
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+    private val seedSampleProjects: Boolean = false
 ) {
-    // In-memory full Project models cache
-    private val _projects = MutableStateFlow<List<Project>>(SampleProjects.getAllInitialProjects())
+    private val emptyDraftProject = Project(
+        id = "__empty_draft__",
+        title = "Untitled Project",
+        aspectRatio = AspectRatio.PORTRAIT_9_16,
+        durationMs = 10_000L,
+        tracks = listOf(
+            Track(
+                name = "Main Video",
+                type = TrackType.MAIN_VIDEO,
+                clips = emptyList()
+            )
+        )
+    )
+
+    // In-memory full Project models cache (no auto-seeded random projects unless explicitly requested)
+    private val _projects = MutableStateFlow<List<Project>>(
+        if (seedSampleProjects) SampleProjects.getAllInitialProjects() else emptyList()
+    )
     val projects: StateFlow<List<Project>> = _projects.asStateFlow()
 
-    private val _currentProject = MutableStateFlow<Project>(_projects.value.first())
+    private val _currentProject = MutableStateFlow<Project>(
+        _projects.value.firstOrNull() ?: emptyDraftProject
+    )
     val currentProject: StateFlow<Project> = _currentProject.asStateFlow()
 
     // Fallback in-memory entities if projectDao is null (e.g. lightweight tests)
-    private val _fallbackEntities = MutableStateFlow<List<ProjectEntity>>(ProjectMappers.getInitialEntities())
+    private val _fallbackEntities = MutableStateFlow<List<ProjectEntity>>(
+        if (seedSampleProjects) ProjectMappers.getInitialEntities() else emptyList()
+    )
 
     // Room Database Flow of project entities for the landing view
     val savedProjectEntities: Flow<List<ProjectEntity>> = projectDao?.getAllProjects() ?: _fallbackEntities.asStateFlow()
@@ -67,16 +88,26 @@ class ProjectRepository(
     init {
         if (projectDao != null) {
             scope.launch {
-                // If the Room database is empty, seed it with sample projects
-                if (projectDao.getProjectCount() == 0) {
-                    val initialEntities = ProjectMappers.getInitialEntities()
-                    projectDao.insertProjects(initialEntities)
+                if (seedSampleProjects) {
+                    if (projectDao.getProjectCount() == 0) {
+                        projectDao.insertProjects(ProjectMappers.getInitialEntities())
+                    }
+                } else {
+                    // Remove any previously auto-seeded random sample projects user didn't create
+                    SampleProjects.SEEDED_SAMPLE_IDS.forEach { sampleId ->
+                        projectDao.deleteProjectById(sampleId)
+                    }
                 }
             }
             // Synchronize in-memory list whenever Room database changes
             projectDao.getAllProjects().onEach { entities ->
+                val visibleEntities = if (seedSampleProjects) {
+                    entities
+                } else {
+                    entities.filterNot { it.id in SampleProjects.SEEDED_SAMPLE_IDS }
+                }
                 val currentMemoryProjects = _projects.value
-                val updatedProjects = entities.map { entity ->
+                val updatedProjects = visibleEntities.map { entity ->
                     val existing = currentMemoryProjects.find { it.id == entity.id }
                     ProjectMappers.toProject(entity, existing)
                 }
@@ -85,14 +116,21 @@ class ProjectRepository(
                 val matchingCur = updatedProjects.find { it.id == cur.id }
                 if (matchingCur != null && matchingCur.title != cur.title) {
                     _currentProject.value = cur.copy(title = matchingCur.title, updatedAt = matchingCur.updatedAt)
+                } else if (cur.id == emptyDraftProject.id && updatedProjects.isNotEmpty()) {
+                    _currentProject.value = updatedProjects.first()
                 }
             }.launchIn(scope)
         }
     }
 
     fun syncFromCloud(cloudEntities: List<ProjectEntity>) {
+        val filteredEntities = if (seedSampleProjects) {
+            cloudEntities
+        } else {
+            cloudEntities.filterNot { it.id in SampleProjects.SEEDED_SAMPLE_IDS }
+        }
         val currentMemoryProjects = _projects.value
-        val updatedProjects = cloudEntities.map { entity ->
+        val updatedProjects = filteredEntities.map { entity ->
             val existing = currentMemoryProjects.find { it.id == entity.id }
             ProjectMappers.toProject(entity, existing)
         }
@@ -110,14 +148,17 @@ class ProjectRepository(
         } else if (updatedProjects.isNotEmpty()) {
             actionStack.clear()
             _currentProject.value = updatedProjects.first()
+        } else {
+            actionStack.clear()
+            _currentProject.value = emptyDraftProject
         }
 
         if (projectDao != null) {
             scope.launch {
-                projectDao.replaceAllProjects(cloudEntities)
+                projectDao.replaceAllProjects(filteredEntities)
             }
         } else {
-            _fallbackEntities.value = cloudEntities
+            _fallbackEntities.value = filteredEntities
         }
     }
 
@@ -191,9 +232,9 @@ class ProjectRepository(
         // 2. Remove from memory
         val remaining = _projects.value.filter { it.id != projectId }
         _projects.value = remaining
-        if (_currentProject.value.id == projectId && remaining.isNotEmpty()) {
+        if (_currentProject.value.id == projectId) {
             actionStack.clear()
-            _currentProject.value = remaining.first()
+            _currentProject.value = remaining.firstOrNull() ?: emptyDraftProject
         }
     }
 

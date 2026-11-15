@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
@@ -94,6 +95,7 @@ import com.example.model.FrameRate
 import com.example.ui.CloudSyncState
 import com.example.ui.EditorViewModel
 import com.example.ui.ProjectSortMode
+import com.example.ui.components.ExportRenderDialog
 import com.example.ui.theme.CutRose
 import com.example.ui.theme.KeyframeViolet
 import com.example.ui.theme.MotionCyan
@@ -122,11 +124,13 @@ fun LandingScreen(
     val searchQuery by viewModel.projectSearchQuery.collectAsStateWithLifecycle()
     val sortMode by viewModel.projectSortMode.collectAsStateWithLifecycle()
     val cloudSyncState by viewModel.cloudSyncState.collectAsStateWithLifecycle()
+    val currentProject by viewModel.currentProject.collectAsStateWithLifecycle()
 
     // Dialog States
     var projectToRename by remember { mutableStateOf<ProjectEntity?>(null) }
     var renameInputText by remember { mutableStateOf("") }
     var projectToDelete by remember { mutableStateOf<ProjectEntity?>(null) }
+    var projectIdToExport by remember { mutableStateOf<String?>(null) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -279,6 +283,10 @@ fun LandingScreen(
                         },
                         onDuplicateRequested = {
                             viewModel.duplicateProject(project.id)
+                        },
+                        onExportRequested = {
+                            viewModel.selectProject(project.id)
+                            projectIdToExport = project.id
                         },
                         onDeleteRequested = {
                             projectToDelete = project
@@ -446,6 +454,14 @@ fun LandingScreen(
                 val created = viewModel.currentProject.value
                 onOpenProject(created.id)
             }
+        )
+    }
+
+    // --- EXPORT DIALOG FROM LANDING CARD ---
+    if (projectIdToExport != null && currentProject.id == projectIdToExport) {
+        ExportRenderDialog(
+            project = currentProject,
+            onDismiss = { projectIdToExport = null }
         )
     }
 }
@@ -844,6 +860,7 @@ fun VideoProjectCard(
     onClick: () -> Unit,
     onRenameRequested: () -> Unit,
     onDuplicateRequested: () -> Unit,
+    onExportRequested: () -> Unit,
     onDeleteRequested: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1035,51 +1052,81 @@ fun VideoProjectCard(
                     }
                 }
 
-                // Three-dot Options Menu
-                Box {
+                // Quick Export button + Three-dot Options Menu
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
                     IconButton(
-                        onClick = { menuExpanded = true },
+                        onClick = onExportRequested,
                         modifier = Modifier
                             .size(36.dp)
-                            .testTag("project_options_button_${project.id}")
+                            .testTag("card_export_button_${project.id}")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Project options",
-                            tint = Color.LightGray,
+                            imageVector = Icons.Default.Download,
+                            contentDescription = "Export ${project.title}",
+                            tint = MotionCyan,
                             modifier = Modifier.size(18.dp)
                         )
                     }
 
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                        modifier = Modifier
-                            .background(StudioSurface)
-                            .border(1.dp, StudioBorder, RoundedCornerShape(8.dp))
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Open in Editor", color = Color.White) },
-                            leadingIcon = {
-                                Icon(Icons.Default.OpenInNew, contentDescription = null, tint = MotionCyan)
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onClick()
-                            }
-                        )
+                    Box {
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("project_options_button_${project.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Project options",
+                                tint = Color.LightGray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
 
-                        DropdownMenuItem(
-                            text = { Text("Rename", color = Color.White) },
-                            leadingIcon = {
-                                Icon(Icons.Default.Edit, contentDescription = null, tint = PlayheadAmber)
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onRenameRequested()
-                            },
-                            modifier = Modifier.testTag("option_rename_${project.id}")
-                        )
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                            modifier = Modifier
+                                .background(StudioSurface)
+                                .border(1.dp, StudioBorder, RoundedCornerShape(8.dp))
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Open in Editor", color = Color.White) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.OpenInNew, contentDescription = null, tint = MotionCyan)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onClick()
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Export Video", color = MotionCyan, fontWeight = FontWeight.SemiBold) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Download, contentDescription = null, tint = MotionCyan)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onExportRequested()
+                                },
+                                modifier = Modifier.testTag("option_export_${project.id}")
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Rename", color = Color.White) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Edit, contentDescription = null, tint = PlayheadAmber)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onRenameRequested()
+                                },
+                                modifier = Modifier.testTag("option_rename_${project.id}")
+                            )
 
                         DropdownMenuItem(
                             text = { Text("Duplicate", color = Color.White) },
@@ -1093,17 +1140,18 @@ fun VideoProjectCard(
                             modifier = Modifier.testTag("option_duplicate_${project.id}")
                         )
 
-                        DropdownMenuItem(
-                            text = { Text("Delete", color = CutRose) },
-                            leadingIcon = {
-                                Icon(Icons.Default.Delete, contentDescription = null, tint = CutRose)
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onDeleteRequested()
-                            },
-                            modifier = Modifier.testTag("option_delete_${project.id}")
-                        )
+                            DropdownMenuItem(
+                                text = { Text("Delete", color = CutRose) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = CutRose)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDeleteRequested()
+                                },
+                                modifier = Modifier.testTag("option_delete_${project.id}")
+                            )
+                        }
                     }
                 }
             }

@@ -156,7 +156,7 @@ class MotionCutTest {
         assertTrue(upbeatTrack.waveformSamples.isNotEmpty())
 
         // Test project audio track import
-        val repo = ProjectRepository()
+        val repo = ProjectRepository(seedSampleProjects = true)
         repo.importMusicTrackToProject(upbeatTrack, 1000L)
 
         val proj = repo.currentProject.value
@@ -168,7 +168,7 @@ class MotionCutTest {
 
     @Test
     fun testAiVideoCaptionsImportToProject() {
-        val repo = ProjectRepository()
+        val repo = ProjectRepository(seedSampleProjects = true)
         val sampleCaptions = listOf(
             com.example.engine.AiCaptionItem(
                 text = "VIRAL CUT",
@@ -274,7 +274,7 @@ class MotionCutTest {
 
     @Test
     fun testRepositoryGlobalUndoRedoOperations() {
-        val repo = ProjectRepository()
+        val repo = ProjectRepository(seedSampleProjects = true)
         assertFalse(repo.canUndo.value)
 
         val initialClipsCount = repo.currentProject.value.tracks.first().clips.size
@@ -309,7 +309,7 @@ class MotionCutTest {
 
     @Test
     fun testVoiceOverRecordingImport() {
-        val repo = ProjectRepository()
+        val repo = ProjectRepository(seedSampleProjects = true)
         val recordedVoiceOver = com.example.engine.RecordedVoiceOver(
             title = "Voiceover 1",
             durationMs = 4200L,
@@ -406,8 +406,15 @@ class MotionCutTest {
         val dao = db.projectDao()
         val repo = ProjectRepository(dao)
 
-        // Seed with entities
-        dao.insertProjects(ProjectMappers.getInitialEntities())
+        // Create a user-authored project (not auto-seeded sample IDs)
+        val userProject = ProjectMappers.toEntity(
+            com.example.model.Project(
+                id = "user_proj_1",
+                title = "My Real Edit",
+                aspectRatio = com.example.model.AspectRatio.PORTRAIT_9_16
+            )
+        )
+        dao.insertProjects(listOf(userProject))
 
         val projectsFlow = repo.savedProjectEntities.first()
         assertTrue(projectsFlow.isNotEmpty())
@@ -446,7 +453,7 @@ class MotionCutTest {
 
     @Test
     fun testBottomDockOperationsAndUndoRedo() {
-        val repo = ProjectRepository()
+        val repo = ProjectRepository(seedSampleProjects = true)
         val targetClip = repo.currentProject.value.tracks.first().clips.first()
         val origCount = repo.currentProject.value.tracks.first().clips.size
 
@@ -756,7 +763,7 @@ class MotionCutTest {
         )
         assertTrue(tilesMatches.isNotEmpty())
 
-        val vm = com.example.ui.EditorViewModel(repository = ProjectRepository())
+        val vm = com.example.ui.EditorViewModel(repository = ProjectRepository(seedSampleProjects = true))
         val firstClip = vm.currentProject.value.tracks.first().clips.first()
         vm.selectClip(firstClip.id)
         val initialFxCount = firstClip.effects.size
@@ -821,5 +828,73 @@ class MotionCutTest {
         val mid3d = KeyframeEvaluator.evaluateModel3D(updated3dClip, 1000L)!!
         assertEquals(90f, mid3d.rotationY, 3f)
     }
+
+    @Test
+    fun testNoAutoSeededRandomProjectsAndPurge() = runBlocking {
+        // 1. Default ProjectRepository has zero auto-seeded random projects
+        val inMemoryRepo = ProjectRepository()
+        assertTrue(inMemoryRepo.projects.value.isEmpty())
+        assertTrue(inMemoryRepo.savedProjectEntities.first().isEmpty())
+
+        // 2. Room-backed ProjectRepository purges old SEEDED_SAMPLE_IDS while keeping user projects
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = AppDatabase.createInMemory(context)
+        val dao = db.projectDao()
+        val userProject = ProjectMappers.toEntity(
+            com.example.model.Project(
+                id = "custom_user_project",
+                title = "My Personal Vlog",
+                aspectRatio = com.example.model.AspectRatio.LANDSCAPE_16_9
+            )
+        )
+        dao.insertProjects(ProjectMappers.getInitialEntities() + userProject)
+
+        val repo = ProjectRepository(dao)
+        kotlinx.coroutines.delay(300L)
+
+        val remaining = dao.getAllProjects().first()
+        assertEquals(1, remaining.size)
+        assertEquals("custom_user_project", remaining.first().id)
+        assertTrue(repo.projects.value.none { it.id in SampleProjects.SEEDED_SAMPLE_IDS })
+
+        // Deleting the last user project leaves 0 projects
+        repo.deleteProject("custom_user_project")
+        kotlinx.coroutines.delay(250L)
+        assertTrue(repo.projects.value.isEmpty())
+
+        db.close()
+    }
+
+    @Test
+    fun testVideoExporterDimensionsAndFileNameSanitization() {
+        val portrait1080 = com.example.engine.VideoExporter.computeExportDimensions(
+            com.example.model.AspectRatio.PORTRAIT_9_16,
+            com.example.model.ExportResolution.FHD_1080P
+        )
+        assertEquals(1080 to 1920, portrait1080)
+
+        val landscape720 = com.example.engine.VideoExporter.computeExportDimensions(
+            com.example.model.AspectRatio.LANDSCAPE_16_9,
+            com.example.model.ExportResolution.HD_720P
+        )
+        assertEquals(1280 to 720, landscape720)
+
+        val square4k = com.example.engine.VideoExporter.computeExportDimensions(
+            com.example.model.AspectRatio.SQUARE_1_1,
+            com.example.model.ExportResolution.UHD_4K
+        )
+        assertEquals(2160 to 2160, square4k)
+
+        val cinematic = com.example.engine.VideoExporter.computeExportDimensions(
+            com.example.model.AspectRatio.CINEMATIC_21_9,
+            com.example.model.ExportResolution.FHD_1080P
+        )
+        assertEquals(0, cinematic.first % 2)
+        assertEquals(0, cinematic.second % 2)
+
+        assertEquals("My_Summer_Vlog_2026", com.example.engine.VideoExporter.sanitizeFileName("  My Summer Vlog! (2026) "))
+        assertEquals("MotionCut_Export", com.example.engine.VideoExporter.sanitizeFileName("   ///   "))
+    }
 }
+
 

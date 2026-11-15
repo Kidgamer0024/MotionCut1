@@ -8,6 +8,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,10 +17,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -60,6 +64,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.AspectRatio
@@ -203,96 +208,95 @@ fun EditorScreen(
             Column(
                 modifier = Modifier.fillMaxSize()
             ) {
-            // 1. Studio Top Navigation Bar
+            // 1. Studio Top Navigation Bar (Primary row keeps Export always pinned on-screen; sub-row scrolls hub tools)
             Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
+                modifier = Modifier.fillMaxWidth(),
                 color = StudioSurface,
                 border = androidx.compose.foundation.BorderStroke(1.dp, StudioBorder)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Project Selector Pill + Global Undo / Redo Cluster
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (onNavigateToLanding != null) {
+                        // Left: Projects Back + Truncatable Project Selector
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (onNavigateToLanding != null) {
+                                Surface(
+                                    color = StudioSurfaceVariant,
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, StudioBorder),
+                                    modifier = Modifier
+                                        .clickable { onNavigateToLanding() }
+                                        .testTag("back_to_landing_button")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Folder,
+                                            contentDescription = "Back to Projects",
+                                            tint = MotionCyan,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = "Projects",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                            }
                             Surface(
                                 color = StudioSurfaceVariant,
                                 shape = RoundedCornerShape(8.dp),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, StudioBorder),
                                 modifier = Modifier
-                                    .clickable { onNavigateToLanding() }
-                                    .testTag("back_to_landing_button")
+                                    .weight(1f, fill = false)
+                                    .clickable { viewModel.setShowProjectPicker(true) }
+                                    .testTag("project_picker_button")
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Folder,
-                                        contentDescription = "Back to Projects",
-                                        tint = MotionCyan,
-                                        modifier = Modifier.size(14.dp)
-                                    )
                                     Text(
-                                        text = "Projects",
-                                        style = MaterialTheme.typography.labelSmall,
+                                        text = project.title,
+                                        style = MaterialTheme.typography.labelMedium,
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                        contentDescription = "Select Project",
+                                        tint = Color.LightGray,
+                                        modifier = Modifier.size(14.dp)
                                     )
                                 }
                             }
                         }
-                        Surface(
-                            color = StudioSurfaceVariant,
-                            shape = RoundedCornerShape(8.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, StudioBorder),
-                            modifier = Modifier
-                                .clickable { viewModel.setShowProjectPicker(true) }
-                                .testTag("project_picker_button")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Folder,
-                                    contentDescription = null,
-                                    tint = MotionCyan,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    text = project.title,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    fontSize = 11.sp
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowDown,
-                                    contentDescription = "Select Project",
-                                    tint = Color.LightGray,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        }
 
-                        // Undo & Redo Quick Action Cluster
+                        // Right: Undo / Redo + Always-Visible Export Button
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Surface(
                                 color = if (canUndo) StudioSurfaceVariant else Color.Transparent,
@@ -303,14 +307,14 @@ fun EditorScreen(
                                     .testTag("global_undo_button")
                             ) {
                                 Box(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.Undo,
                                         contentDescription = lastUndoDesc?.let { "Undo $it" } ?: "Undo",
                                         tint = if (canUndo) Color.White else Color.Gray.copy(alpha = 0.35f),
-                                        modifier = Modifier.size(14.dp)
+                                        modifier = Modifier.size(15.dp)
                                     )
                                 }
                             }
@@ -324,47 +328,66 @@ fun EditorScreen(
                                     .testTag("global_redo_button")
                             ) {
                                 Box(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.Redo,
                                         contentDescription = lastRedoDesc?.let { "Redo $it" } ?: "Redo",
                                         tint = if (canRedo) Color.White else Color.Gray.copy(alpha = 0.35f),
-                                        modifier = Modifier.size(14.dp)
+                                        modifier = Modifier.size(15.dp)
                                     )
                                 }
+                            }
+
+                            Button(
+                                onClick = { viewModel.setShowExport(true) },
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .testTag("open_export_dialog_button"),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MotionCyan,
+                                    contentColor = Color.Black
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = "Export Video", modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Export", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
                             }
                         }
                     }
 
-                    // Hub Buttons (AI Magic, Voice-over, Marketplace & Music Library) + Export Action
+                    // Secondary Scrollable Studio Hub Strip (AI Magic, Voice, Market, Music, Specs)
                     Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(start = 8.dp, end = 8.dp, bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // AI Magic Studio Button
                         Surface(
-                            color = MotionCyan.copy(alpha = 0.2f),
+                            color = MotionCyan.copy(alpha = 0.18f),
                             shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MotionCyan),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MotionCyan.copy(alpha = 0.7f)),
                             modifier = Modifier
                                 .clickable { viewModel.setShowAiStudioModal(true) }
                                 .testTag("open_ai_studio_button")
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MotionCyan, modifier = Modifier.size(13.dp))
                                 Text("AI Magic", color = MotionCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
-                        // Voiceover Button
                         Surface(
-                            color = CutRose.copy(alpha = 0.2f),
+                            color = CutRose.copy(alpha = 0.18f),
                             shape = RoundedCornerShape(6.dp),
                             border = androidx.compose.foundation.BorderStroke(1.dp, CutRose.copy(alpha = 0.6f)),
                             modifier = Modifier
@@ -372,18 +395,17 @@ fun EditorScreen(
                                 .testTag("open_top_voiceover_button")
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Icon(Icons.Default.Mic, contentDescription = null, tint = CutRose, modifier = Modifier.size(13.dp))
                                 Text("Voice", color = CutRose, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
-                        // Marketplace Hub Button
                         Surface(
-                            color = KeyframeViolet.copy(alpha = 0.2f),
+                            color = KeyframeViolet.copy(alpha = 0.18f),
                             shape = RoundedCornerShape(6.dp),
                             border = androidx.compose.foundation.BorderStroke(1.dp, KeyframeViolet.copy(alpha = 0.6f)),
                             modifier = Modifier
@@ -391,18 +413,17 @@ fun EditorScreen(
                                 .testTag("open_marketplace_button")
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Icon(Icons.Default.Storefront, contentDescription = null, tint = KeyframeViolet, modifier = Modifier.size(13.dp))
                                 Text("Market", color = KeyframeViolet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
-                        // Music Library Button
                         Surface(
-                            color = PlayheadAmber.copy(alpha = 0.2f),
+                            color = PlayheadAmber.copy(alpha = 0.18f),
                             shape = RoundedCornerShape(6.dp),
                             border = androidx.compose.foundation.BorderStroke(1.dp, PlayheadAmber.copy(alpha = 0.6f)),
                             modifier = Modifier
@@ -410,31 +431,28 @@ fun EditorScreen(
                                 .testTag("open_music_library_button")
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Icon(Icons.Default.MusicNote, contentDescription = null, tint = PlayheadAmber, modifier = Modifier.size(13.dp))
                                 Text("Music", color = PlayheadAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
-                        // Export Button
-                        Button(
-                            onClick = { viewModel.setShowExport(true) },
-                            modifier = Modifier
-                                .height(30.dp)
-                                .testTag("open_export_dialog_button"),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MotionCyan,
-                                contentColor = Color.Black
-                            ),
+                        Surface(
+                            color = StudioSurfaceVariant,
                             shape = RoundedCornerShape(6.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            border = androidx.compose.foundation.BorderStroke(1.dp, StudioBorder),
+                            modifier = Modifier.clickable { viewModel.setShowExport(true) }
                         ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(13.dp))
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("Export", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text(
+                                text = "${project.resolution.label.substringBefore(" ")} • ${project.frameRate.fps}fps • ${project.aspectRatio.ratioText}",
+                                color = Color.LightGray,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
                         }
                     }
                 }
@@ -915,35 +933,51 @@ private fun ProjectListDialog(
                 )
                 Spacer(modifier = Modifier.height(10.dp))
 
-                projects.forEach { proj ->
-                    val isSel = proj.id == currentProjectId
-                    Surface(
+                if (projects.isEmpty()) {
+                    Text(
+                        text = "No saved projects yet. Create one below to start editing.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                } else {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(1.dp, if (isSel) MotionCyan else StudioBorder, RoundedCornerShape(8.dp))
-                            .clickable { onSelectProject(proj.id) },
-                        color = if (isSel) MotionCyan.copy(alpha = 0.2f) else StudioSurfaceVariant
+                            .heightIn(max = 260.dp)
+                            .verticalScroll(rememberScrollState())
                     ) {
-                        Row(
-                            modifier = Modifier.padding(10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = proj.title,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (isSel) MotionCyan else Color.White,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "${proj.aspectRatio.ratioText} • ${proj.durationMs / 1000}s • ${proj.tracks.size} Tracks",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.Gray,
-                                    fontSize = 10.sp
-                                )
+                        projects.forEach { proj ->
+                            val isSel = proj.id == currentProjectId
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (isSel) MotionCyan else StudioBorder, RoundedCornerShape(8.dp))
+                                    .clickable { onSelectProject(proj.id) },
+                                color = if (isSel) MotionCyan.copy(alpha = 0.2f) else StudioSurfaceVariant
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = proj.title,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = if (isSel) MotionCyan else Color.White,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "${proj.aspectRatio.ratioText} • ${proj.durationMs / 1000}s • ${proj.tracks.size} Tracks",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.Gray,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
