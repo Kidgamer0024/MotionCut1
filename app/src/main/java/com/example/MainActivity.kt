@@ -33,6 +33,7 @@ import com.example.ui.screens.LandingScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.util.configureAppCheck
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
@@ -40,6 +41,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOf
 
 enum class AppScreen {
     LANDING,
@@ -69,9 +71,14 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MotionCutAppRoot(
-    auth: FirebaseAuth = Firebase.auth
+    auth: FirebaseAuth? = null
 ) {
-    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+    val context = LocalContext.current
+    val resolvedAuth = remember(auth, context) {
+        auth ?: if (FirebaseApp.getApps(context).isNotEmpty()) Firebase.auth else null
+    }
+    val currentUser by (resolvedAuth?.authStateFlow() ?: flowOf(null))
+        .collectAsStateWithLifecycle(initialValue = resolvedAuth?.currentUser)
     var continueWithoutSignIn by rememberSaveable { mutableStateOf(false) }
     val user = currentUser
 
