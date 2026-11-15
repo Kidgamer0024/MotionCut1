@@ -119,7 +119,9 @@ import com.example.model.Keyframe
 import com.example.model.KeyframeTrack
 import com.example.model.ShapeConfig
 import com.example.model.ShapeType
+import com.example.model.TextAnimationType
 import com.example.model.TextConfig
+import com.example.model.TextFontChoice
 import com.example.model.TransformState
 import com.example.model.VideoEffect
 import com.example.ui.theme.KeyframeViolet
@@ -192,7 +194,7 @@ fun AddLayerDialog(
 
     var showSolidSwatches by remember { mutableStateOf(false) }
 
-    // Load device MediaStore + persisted + studio media and audio
+    // Load real device MediaStore, persisted picked media, and linked folders (no Studio sample videos)
     LaunchedEffect(refreshTrigger) {
         deviceMedia = DeviceMediaScanner.loadDeviceAndStudioMedia(context)
         deviceAudio = DeviceMediaScanner.loadDeviceAndStudioAudio(context)
@@ -947,6 +949,41 @@ private fun MediaCategoryContent(
                         }
                     }
                 }
+            } else if (filtered.isEmpty()) {
+                item(span = { GridItemSpan(2) }) {
+                    Surface(
+                        color = AddCardTileBg,
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, AddDividerColor),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("empty_device_media_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PermMedia,
+                                contentDescription = null,
+                                tint = AddEmerald,
+                                modifier = Modifier.size(30.dp)
+                            )
+                            Text(
+                                text = "No Device Media Found",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "Tap Photos & Videos or Files Dir above to import videos, photos, or transparent PNG overlays.",
+                                color = AddSlateText,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
             } else {
                 items(filtered, key = { it.id }) { item ->
                     DeviceMediaGridTile(
@@ -984,12 +1021,30 @@ private fun DeviceMediaGridTile(
         border = BorderStroke(1.dp, AddDividerColor)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
+            // Subtle checkerboard backdrop so transparent PNG overlays remain visually transparent
+            if (!item.isVideo) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val cell = 10.dp.toPx()
+                    val cols = (size.width / cell).toInt() + 1
+                    val rows = (size.height / cell).toInt() + 1
+                    for (r in 0 until rows) {
+                        for (c in 0 until cols) {
+                            val light = ((r + c) % 2) == 0
+                            drawRect(
+                                color = if (light) Color(0xFF28323B) else Color(0xFF1A2229),
+                                topLeft = androidx.compose.ui.geometry.Offset(c * cell, r * cell),
+                                size = androidx.compose.ui.geometry.Size(cell, cell)
+                            )
+                        }
+                    }
+                }
+            }
             when {
                 loadedThumb != null -> {
                     Image(
                         bitmap = loadedThumb!!,
                         contentDescription = item.title,
-                        contentScale = ContentScale.Crop,
+                        contentScale = if (item.isVideo) ContentScale.Crop else ContentScale.Fit,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -1744,12 +1799,14 @@ private fun InlineTextCreatorPane(
 ) {
     var textValue by remember { mutableStateOf("MOTION CUT") }
     var chosenColor by remember { mutableLongStateOf(0xFFFFFFFFL) }
+    var chosenFont by remember { mutableStateOf(TextFontChoice.BEBAS_NEUE) }
+    var chosenAnimation by remember { mutableStateOf(TextAnimationType.FADE_POP) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text("Kinetic Text Layer", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
         OutlinedTextField(
@@ -1767,6 +1824,47 @@ private fun InlineTextCreatorPane(
                 .fillMaxWidth()
                 .testTag("inline_text_input")
         )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(TextFontChoice.entries) { font ->
+                val selected = font == chosenFont
+                Surface(
+                    color = if (selected) AddEmerald.copy(alpha = 0.22f) else AddCardTileBg,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, if (selected) AddEmerald else AddDividerColor),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { chosenFont = font }
+                ) {
+                    Text(
+                        text = font.displayName,
+                        color = if (selected) AddEmerald else Color.White,
+                        fontFamily = TextStyleRegistry.composeFontFamily(font),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                    )
+                }
+            }
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(TextAnimationType.entries) { anim ->
+                val selected = anim == chosenAnimation
+                Surface(
+                    color = if (selected) MotionCyan.copy(alpha = 0.22f) else AddCardTileBg,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, if (selected) MotionCyan else AddDividerColor),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { chosenAnimation = anim }
+                ) {
+                    Text(
+                        text = anim.label,
+                        color = if (selected) MotionCyan else AddSlateText,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             listOf(0xFFFFFFFFL, 0xFF10E878L, 0xFF00E5FFL, 0xFFFFB020L, 0xFFFF3366L).forEach { col ->
                 Surface(
@@ -1774,7 +1872,7 @@ private fun InlineTextCreatorPane(
                     color = Color(col),
                     border = if (chosenColor == col) BorderStroke(2.dp, Color.White) else null,
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(28.dp)
                         .clickable { chosenColor = col }
                 ) {}
             }
@@ -1791,10 +1889,12 @@ private fun InlineTextCreatorPane(
                         durationMs = 5000L,
                         textConfig = TextConfig(
                             text = safeText,
-                            fontSizeSp = 32f,
+                            fontSizeSp = 34f,
                             textColor = chosenColor,
                             strokeColor = 0xFF000000,
-                            strokeWidth = 3f
+                            strokeWidth = 3f,
+                            fontChoice = chosenFont,
+                            animationType = chosenAnimation
                         )
                     )
                 )
@@ -1912,7 +2012,26 @@ private fun buildClipFromTemplate(preset: MotionTemplatePreset, currentTimeMs: L
                 textColor = preset.textColor,
                 isBold = true,
                 strokeColor = 0xFF000000,
-                strokeWidth = 3f
+                strokeWidth = 3f,
+                fontChoice = when (preset.id) {
+                    "tpl_word_quote" -> TextFontChoice.PLAYFAIR_DISPLAY
+                    "tpl_typewriter" -> TextFontChoice.JETBRAINS_MONO
+                    "tpl_lower_third" -> TextFontChoice.OSWALD
+                    "tpl_glitch_intro" -> TextFontChoice.SPACE_GROTESK
+                    "tpl_neon_sign" -> TextFontChoice.RIGHTEOUS
+                    else -> TextFontChoice.BEBAS_NEUE
+                },
+                animationType = when (preset.id) {
+                    "tpl_bouncy" -> TextAnimationType.BOUNCE_IN
+                    "tpl_word_quote" -> TextAnimationType.SLIDE_UP
+                    "tpl_typewriter" -> TextAnimationType.TYPEWRITER
+                    "tpl_lower_third" -> TextAnimationType.SLIDE_UP
+                    "tpl_glitch_intro" -> TextAnimationType.GLITCH_FLICKER
+                    "tpl_neon_sign" -> TextAnimationType.FADE_POP
+                    "tpl_light_sweep" -> TextAnimationType.TRACKING_REVEAL
+                    else -> TextAnimationType.ZOOM_BURST
+                },
+                hasBackgroundPill = preset.categoryTag == "Lower third"
             ),
             effects = fx,
             keyframeTracks = mapOf(

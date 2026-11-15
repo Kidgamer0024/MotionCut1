@@ -136,7 +136,7 @@ fun EffectLibraryDialog(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "$totalCount effects across 5 pro suites • ${filteredPresets.size} shown",
+                                text = "$totalCount curated effects • ${filteredPresets.size} shown",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MotionCyan,
                                 fontSize = 11.sp
@@ -164,7 +164,7 @@ fun EffectLibraryDialog(
                     onValueChange = { searchQuery = it },
                     placeholder = {
                         Text(
-                            text = "Search 2,200+ effects (Tiles, Glow, Shake, Saber, DV...)",
+                            text = "Search practical VFX (Bloom, Gaussian Blur, Shake, Chromatic, LUT...)",
                             fontSize = 12.sp,
                             color = Color.Gray
                         )

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Base64
 import com.example.model.Face3D
+import com.example.model.Library3DModel
 import com.example.model.Mesh3DData
 import com.example.model.Model3DConfig
 import com.example.model.Model3DSource
@@ -45,6 +46,12 @@ object Mesh3DParser {
                 val cacheKey = "prim_${config.primitiveShape.name}_${(evaluatedExtrusion * 20).toInt()}"
                 meshCache.getOrPut(cacheKey) {
                     buildPrimitiveMesh(config.primitiveShape, evaluatedExtrusion)
+                }
+            }
+            Model3DSource.LIBRARY_MODEL -> {
+                val cacheKey = "lib_${config.libraryModel.name}_${(evaluatedExtrusion * 20).toInt()}"
+                meshCache.getOrPut(cacheKey) {
+                    buildLibraryMesh(config.libraryModel, evaluatedExtrusion)
                 }
             }
             Model3DSource.EXTRUDED_TEXT -> {
@@ -314,6 +321,187 @@ object Mesh3DParser {
     fun buildImagePlaneMesh(extrusionDepth: Float): Mesh3DData {
         val d = (0.04f + extrusionDepth * 0.25f).coerceIn(0.03f, 0.5f)
         return buildBoxMesh(0.85f, 0.58f, d, "3D Image Plane")
+    }
+
+    fun buildLibraryMesh(model: Library3DModel, extrusionDepth: Float = 0.4f): Mesh3DData {
+        val verts = ArrayList<Vec3>()
+        val faces = ArrayList<Face3D>()
+        when (model) {
+            Library3DModel.ROCKET -> {
+                // Sleek fuselage + nose cone + 3 booster fins
+                appendCylinderPart(verts, faces, 0f, -0.05f, 0f, 0.24f, 0.42f, 14)
+                appendConePart(verts, faces, 0f, -0.66f, 0f, 0.25f, 0.40f, 14)
+                appendCylinderPart(verts, faces, 0f, 0.42f, 0f, 0.16f, 0.10f, 12)
+                for (i in 0 until 3) {
+                    val ang = i * (2f * PI.toFloat() / 3f)
+                    appendBox(verts, faces, cos(ang) * 0.30f, 0.28f, 0.10f, 0.20f, 0.04f)
+                }
+            }
+            Library3DModel.SATELLITE -> {
+                // Core bus + dish + twin solar arrays
+                appendBox(verts, faces, 0f, 0f, 0.22f, 0.22f, 0.22f)
+                appendBox(verts, faces, -0.62f, 0f, 0.34f, 0.16f, 0.03f)
+                appendBox(verts, faces, 0.62f, 0f, 0.34f, 0.16f, 0.03f)
+                appendConePart(verts, faces, 0f, -0.35f, 0f, 0.28f, 0.16f, 14)
+            }
+            Library3DModel.PORTAL_RING -> {
+                // Thick stargate ring + 8 chevrons
+                val torus = buildTorusMesh(20, 10)
+                verts.addAll(torus.vertices)
+                faces.addAll(torus.faces)
+                for (i in 0 until 8) {
+                    val a = i * (2f * PI.toFloat() / 8f)
+                    appendBox(verts, faces, cos(a) * 0.62f, sin(a) * 0.62f, 0.08f, 0.08f, 0.16f)
+                }
+            }
+            Library3DModel.STUDIO_MIC -> {
+                // Capsule grille + yoke stand + base
+                appendCylinderPart(verts, faces, 0f, -0.25f, 0f, 0.24f, 0.28f, 14)
+                appendCylinderPart(verts, faces, 0f, 0.18f, 0f, 0.06f, 0.25f, 10)
+                appendCylinderPart(verts, faces, 0f, 0.46f, 0f, 0.34f, 0.05f, 16)
+            }
+            Library3DModel.HEADPHONES -> {
+                // Two earcups + arch segments
+                appendCylinderPart(verts, faces, -0.45f, 0.15f, 0f, 0.20f, 0.18f, 14)
+                appendCylinderPart(verts, faces, 0.45f, 0.15f, 0f, 0.20f, 0.18f, 14)
+                for (s in -4..4) {
+                    val a = s * 0.19f
+                    appendBox(verts, faces, sin(a) * 0.48f, -cos(a) * 0.48f + 0.10f, 0.09f, 0.06f, 0.09f)
+                }
+            }
+            Library3DModel.SMARTPHONE_RIG -> {
+                // Phone slab + left/right cage grips + top mic
+                appendBox(verts, faces, 0f, 0f, 0.42f, 0.26f, 0.06f)
+                appendBox(verts, faces, -0.52f, 0f, 0.06f, 0.28f, 0.06f)
+                appendBox(verts, faces, 0.52f, 0f, 0.06f, 0.28f, 0.06f)
+                appendBox(verts, faces, 0f, -0.34f, 0.14f, 0.07f, 0.08f)
+            }
+            Library3DModel.LAPTOP_PRO -> {
+                // Base deck + angled screen lid
+                appendBox(verts, faces, 0f, 0.26f, 0.52f, 0.04f, 0.34f)
+                appendBox(verts, faces, 0f, -0.14f, 0.52f, 0.34f, 0.03f)
+            }
+            Library3DModel.TROPHY_CUP -> {
+                // Wide cup + stem + pedestal
+                appendCylinderPart(verts, faces, 0f, -0.28f, 0f, 0.34f, 0.26f, 16)
+                appendCylinderPart(verts, faces, 0f, 0.08f, 0f, 0.10f, 0.16f, 12)
+                appendBox(verts, faces, 0f, 0.36f, 0.28f, 0.14f, 0.28f)
+                appendBox(verts, faces, -0.40f, -0.28f, 0.08f, 0.14f, 0.05f)
+                appendBox(verts, faces, 0.40f, -0.28f, 0.08f, 0.14f, 0.05f)
+            }
+            Library3DModel.ROYAL_CROWN -> {
+                // Band + 6 spires around crown
+                appendCylinderPart(verts, faces, 0f, 0.22f, 0f, 0.46f, 0.12f, 16)
+                for (i in 0 until 6) {
+                    val a = i * (2f * PI.toFloat() / 6f)
+                    appendConePart(verts, faces, cos(a) * 0.42f, -0.10f, sin(a) * 0.42f, 0.13f, 0.28f, 6)
+                }
+            }
+            Library3DModel.CRYSTAL_GEM -> {
+                val octa = buildOctahedronMesh()
+                verts.addAll(octa.vertices.map { Vec3(it.x * 0.72f, it.y * 1.15f, it.z * 0.72f) })
+                faces.addAll(octa.faces)
+                appendConePart(verts, faces, -0.35f, 0.12f, 0.18f, 0.20f, 0.40f, 6)
+                appendConePart(verts, faces, 0.35f, 0.15f, -0.15f, 0.18f, 0.36f, 6)
+            }
+            Library3DModel.MECHANICAL_GEAR -> {
+                val hz = (0.08f + extrusionDepth * 0.18f).coerceIn(0.06f, 0.3f)
+                appendCylinderPart(verts, faces, 0f, 0f, 0f, 0.46f, hz, 16)
+                for (i in 0 until 10) {
+                    val a = i * (2f * PI.toFloat() / 10f)
+                    appendBox(verts, faces, cos(a) * 0.56f, sin(a) * 0.56f, 0.10f, 0.10f, hz)
+                }
+            }
+            Library3DModel.LIGHTNING_BOLT -> {
+                val hz = (0.08f + extrusionDepth * 0.22f).coerceIn(0.06f, 0.36f)
+                appendBox(verts, faces, 0.12f, -0.38f, 0.22f, 0.20f, hz)
+                appendBox(verts, faces, 0.0f, -0.04f, 0.30f, 0.14f, hz)
+                appendBox(verts, faces, -0.14f, 0.34f, 0.18f, 0.24f, hz)
+            }
+            Library3DModel.HEART_3D -> {
+                val hz = (0.10f + extrusionDepth * 0.25f).coerceIn(0.08f, 0.35f)
+                appendCylinderPart(verts, faces, -0.24f, -0.18f, 0f, 0.28f, hz, 12)
+                appendCylinderPart(verts, faces, 0.24f, -0.18f, 0f, 0.28f, hz, 12)
+                appendConePart(verts, faces, 0f, 0.35f, 0f, 0.50f, -0.52f, 12)
+            }
+            Library3DModel.PLANET_SATURN -> {
+                val sphere = buildSphereMesh(8, 12)
+                verts.addAll(sphere.vertices.map { Vec3(it.x * 0.65f, it.y * 0.65f, it.z * 0.65f) })
+                faces.addAll(sphere.faces)
+                // Flat orbital ring boxes tilted around equator
+                val ringSegs = 18
+                for (i in 0 until ringSegs) {
+                    val a = i * (2f * PI.toFloat() / ringSegs)
+                    appendBox(verts, faces, cos(a) * 0.78f, sin(a) * 0.18f, 0.10f, 0.03f, 0.10f)
+                }
+            }
+        }
+        return normalizeMesh(Mesh3DData(verts, faces, model.displayName))
+    }
+
+    private fun appendCylinderPart(
+        verts: MutableList<Vec3>,
+        faces: MutableList<Face3D>,
+        cx: Float,
+        cy: Float,
+        cz: Float,
+        radius: Float,
+        halfHeight: Float,
+        segs: Int
+    ) {
+        val base = verts.size
+        val topCenter = base
+        val botCenter = base + 1
+        verts.add(Vec3(cx, cy - halfHeight, cz))
+        verts.add(Vec3(cx, cy + halfHeight, cz))
+        val ringStart = base + 2
+        for (i in 0..segs) {
+            val a = 2f * PI.toFloat() * i / segs
+            val x = cx + cos(a) * radius
+            val z = cz + sin(a) * radius
+            verts.add(Vec3(x, cy - halfHeight, z))
+            verts.add(Vec3(x, cy + halfHeight, z))
+        }
+        for (i in 0 until segs) {
+            if (faces.size + 4 > MAX_FACES) return
+            val t0 = ringStart + i * 2
+            val b0 = t0 + 1
+            val t1 = t0 + 2
+            val b1 = t0 + 3
+            faces.add(Face3D(topCenter, t1, t0))
+            faces.add(Face3D(botCenter, b0, b1))
+            faces.add(Face3D(t0, b0, b1))
+            faces.add(Face3D(t0, b1, t1))
+        }
+    }
+
+    private fun appendConePart(
+        verts: MutableList<Vec3>,
+        faces: MutableList<Face3D>,
+        cx: Float,
+        cy: Float,
+        cz: Float,
+        radius: Float,
+        heightOffset: Float,
+        segs: Int
+    ) {
+        val base = verts.size
+        val tipIdx = base
+        val baseCenterIdx = base + 1
+        verts.add(Vec3(cx, cy - heightOffset, cz))
+        verts.add(Vec3(cx, cy + heightOffset * 0.35f, cz))
+        val ringStart = base + 2
+        for (i in 0..segs) {
+            val a = 2f * PI.toFloat() * i / segs
+            verts.add(Vec3(cx + cos(a) * radius, cy + heightOffset * 0.35f, cz + sin(a) * radius))
+        }
+        for (i in 0 until segs) {
+            if (faces.size + 2 > MAX_FACES) return
+            val p0 = ringStart + i
+            val p1 = ringStart + i + 1
+            faces.add(Face3D(tipIdx, p0, p1))
+            faces.add(Face3D(baseCenterIdx, p1, p0))
+        }
     }
 
     private fun buildBoxMesh(hx: Float, hy: Float, hz: Float, name: String): Mesh3DData {

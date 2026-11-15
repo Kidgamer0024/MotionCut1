@@ -5,7 +5,9 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.MediaPlayer
+import android.media.PlaybackParams
 import android.net.Uri
+import android.os.Build
 import com.example.model.MusicCategory
 import com.example.model.MusicTrack
 import kotlinx.coroutines.CoroutineScope
@@ -34,7 +36,12 @@ class AudioSynthesizerEngine(
     private var audioTrack: AudioTrack? = null
     private var mediaPlayer: MediaPlayer? = null
 
-    fun playTrack(track: MusicTrack) {
+    fun playTrack(
+        track: MusicTrack,
+        speed: Float = 1.0f,
+        preservePitch: Boolean = true,
+        isReversed: Boolean = false
+    ) {
         if (_isPlayingPreview.value && _currentTrackId.value == track.id) {
             stop()
             return
@@ -43,6 +50,7 @@ class AudioSynthesizerEngine(
         stop()
         _currentTrackId.value = track.id
         _isPlayingPreview.value = true
+        val safeSpeed = speed.coerceIn(0.25f, 4.0f)
 
         audioJob = scope.launch(Dispatchers.Default) {
             val sampleRate = 44100
@@ -78,20 +86,22 @@ class AudioSynthesizerEngine(
                 return@launch
             }
 
-            // Generate musical chord progression & melody based on genre
-            val chordProgression = when (track.category) {
-                MusicCategory.UPBEAT -> listOf(261.63f, 329.63f, 392.00f, 440.00f) // C - E - G - A
-                MusicCategory.CINEMATIC -> listOf(220.00f, 261.63f, 329.63f, 196.00f) // A minor - C - E - G
-                MusicCategory.AMBIENT -> listOf(174.61f, 220.00f, 261.63f, 329.63f) // F maj7 ambient
-                MusicCategory.ELECTRONIC -> listOf(146.83f, 174.61f, 220.00f, 293.66f) // D minor punch
+            val baseProgression = when (track.category) {
+                MusicCategory.UPBEAT -> listOf(261.63f, 329.63f, 392.00f, 440.00f)
+                MusicCategory.CINEMATIC -> listOf(220.00f, 261.63f, 329.63f, 196.00f)
+                MusicCategory.AMBIENT -> listOf(174.61f, 220.00f, 261.63f, 329.63f)
+                MusicCategory.ELECTRONIC -> listOf(146.83f, 174.61f, 220.00f, 293.66f)
                 else -> listOf(220.00f, 277.18f, 329.63f, 440.00f)
             }
+            val chordProgression = if (isReversed) baseProgression.reversed() else baseProgression
 
-            val totalDurationMs = track.durationSec * 1000L
+            val totalDurationMs = ((track.durationSec * 1000L) / safeSpeed).toLong().coerceAtLeast(500L)
             val startTime = System.currentTimeMillis()
             val chunkSamples = 2048
             val buffer = ShortArray(chunkSamples)
             var phase = 0.0
+            val pitchMult = if (preservePitch) 1.0f else safeSpeed
+            val stepMs = (500f / safeSpeed).toLong().coerceAtLeast(100L)
 
             while (_isPlayingPreview.value) {
                 val elapsed = System.currentTimeMillis() - startTime
@@ -101,13 +111,10 @@ class AudioSynthesizerEngine(
                 }
                 _previewProgress.value = (elapsed.toFloat() / totalDurationMs).coerceIn(0f, 1f)
 
-                // Select note from progression
-                val stepIdx = ((elapsed / 500) % chordProgression.size).toInt()
-                val targetFreq = chordProgression[stepIdx]
+                val stepIdx = ((elapsed / stepMs) % chordProgression.size).toInt()
+                val targetFreq = chordProgression[stepIdx] * pitchMult
 
                 for (i in 0 until chunkSamples) {
-                    val t = (elapsed * 0.001) + (i.toDouble() / sampleRate)
-                    // Harmonic blend of fundamental + 2nd harmonic + sub bass
                     val wave = 0.6 * sin(phase) +
                                0.25 * sin(phase * 2.0) +
                                0.15 * sin(phase * 0.5)
@@ -115,7 +122,6 @@ class AudioSynthesizerEngine(
                     phase += 2.0 * Math.PI * targetFreq / sampleRate
                     if (phase > 2.0 * Math.PI) phase -= 2.0 * Math.PI
 
-                    // Apply soft envelope
                     val sample = (wave * 18000.0).toInt().coerceIn(-32767, 32767).toShort()
                     buffer[i] = sample
                 }
@@ -127,7 +133,14 @@ class AudioSynthesizerEngine(
         }
     }
 
-    fun playAudioUri(context: Context, id: String, uriString: String, durationMs: Long) {
+    fun playAudioUri(
+        context: Context,
+        id: String,
+        uriString: String,
+        durationMs: Long,
+        speed: Float = 1.0f,
+        preservePitch: Boolean = true
+    ) {
         if (_isPlayingPreview.value && _currentTrackId.value == id) {
             stop()
             return
@@ -136,6 +149,7 @@ class AudioSynthesizerEngine(
         stop()
         _currentTrackId.value = id
         _isPlayingPreview.value = true
+        val safeSpeed = speed.coerceIn(0.25f, 4.0f)
 
         audioJob = scope.launch(Dispatchers.Main) {
             try {
@@ -148,6 +162,14 @@ class AudioSynthesizerEngine(
                     )
                     setDataSource(context, Uri.parse(uriString))
                     prepare()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        runCatching {
+                            playbackParams = PlaybackParams().apply {
+                                this.speed = safeSpeed
+                                this.pitch = if (preservePitch) 1.0f else safeSpeed
+                            }
+                        }
+                    }
                     start()
                 }
                 mediaPlayer = player

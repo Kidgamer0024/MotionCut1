@@ -97,15 +97,16 @@ fun VideoMonitorCanvas(
     val context = LocalContext.current
     val textMeasurer = rememberTextMeasurer()
 
-    // Pre-cache drawables for sample clips
+    // Pre-cache drawables for sample clips with ARGB_8888 alpha preservation
     val clipBitmaps = remember(project) {
         val map = mutableMapOf<Int, ImageBitmap>()
+        val opts = DeviceMediaScanner.transparentBitmapOptions(1)
         project.tracks.forEach { track ->
             track.clips.forEach { clip ->
                 clip.assetResId?.let { resId ->
                     if (!map.containsKey(resId)) {
                         try {
-                            val bmp = BitmapFactory.decodeResource(context.resources, resId)
+                            val bmp = BitmapFactory.decodeResource(context.resources, resId, opts)
                             if (bmp != null) {
                                 map[resId] = bmp.asImageBitmap()
                             }
@@ -118,19 +119,19 @@ fun VideoMonitorCanvas(
         map
     }
 
-    // Async decode device video/photo URIs for clips added from Media
+    // Async decode device video/photo URIs AND 3D model texture URIs in ARGB_8888 preserving transparency
     var uriBitmaps by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
     LaunchedEffect(project) {
         val urisToLoad = project.tracks
             .flatMap { it.clips }
-            .mapNotNull { it.mediaUri }
+            .flatMap { clip -> listOfNotNull(clip.mediaUri, clip.model3dConfig?.imageUri) }
             .distinct()
             .filterNot { uriBitmaps.containsKey(it) }
         if (urisToLoad.isNotEmpty()) {
             val loaded = uriBitmaps.toMutableMap()
             urisToLoad.forEach { uriStr ->
-                val bmp = DeviceMediaScanner.loadThumbnailBitmap(context, uriStr, isVideo = true)
-                    ?: DeviceMediaScanner.loadThumbnailBitmap(context, uriStr, isVideo = false)
+                val isVid = DeviceMediaScanner.isVideoUri(context, uriStr, isVideoHint = false)
+                val bmp = DeviceMediaScanner.loadFullImageBitmap(context, uriStr, isVideoHint = isVid)
                 if (bmp != null) {
                     loaded[uriStr] = bmp
                 }
@@ -536,7 +537,7 @@ private fun DrawScope.drawClipLayerContent(
             val evaluated3D = KeyframeEvaluator.evaluateModel3D(clip, currentTimeMs)
             if (evaluated3D != null) {
                 val mesh = Mesh3DParser.getOrBuildMesh(context, evaluated3D, evaluated3D.extrusionDepth)
-                val planeBmp = evaluated3D.imageUri?.let { uriBitmaps[it] }
+                val planeBmp = (evaluated3D.imageUri ?: clip.mediaUri)?.let { uriBitmaps[it] }
                 drawModel3D(
                     mesh = mesh,
                     config = evaluated3D,
@@ -550,28 +551,79 @@ private fun DrawScope.drawClipLayerContent(
         ClipType.TEXT -> {
             val textConfig = clip.textConfig
             if (textConfig != null) {
+                val relTime = (currentTimeMs - clip.startTimeMs).coerceIn(0L, clip.durationMs)
+                val anim = TextStyleRegistry.evaluateAnimatedText(textConfig, relTime, clip.durationMs)
+                val finalAlpha = (transform.opacity * anim.alphaMultiplier).coerceIn(0f, 1f)
+                val fontFamily = TextStyleRegistry.composeFontFamily(textConfig.fontChoice)
+                val spacing = (textConfig.letterSpacing + anim.letterSpacingDelta).sp
+                val weight = if (textConfig.isBold) FontWeight.Bold else FontWeight.Normal
+
                 val textLayout = textMeasurer.measure(
-                    text = textConfig.text,
+                    text = anim.visibleText,
                     style = TextStyle(
                         fontSize = textConfig.fontSizeSp.sp,
-                        fontWeight = if (textConfig.isBold) FontWeight.Black else FontWeight.Normal,
+                        fontWeight = weight,
+                        fontFamily = fontFamily,
+                        letterSpacing = spacing,
                         color = Color(textConfig.textColor)
                     )
                 )
+
                 val textOffset = Offset(-textLayout.size.width / 2f, -textLayout.size.height / 2f)
-                if (textConfig.strokeWidth > 0f) {
-                    drawRoundRect(
-                        color = Color(textConfig.strokeColor).copy(alpha = 0.5f * transform.opacity),
-                        topLeft = textOffset.copy(x = textOffset.x - 12f, y = textOffset.y - 8f),
-                        size = Size(textLayout.size.width + 24f, textLayout.size.height + 16f),
-                        cornerRadius = CornerRadius(8f)
-                    )
+                translate(left = anim.offsetX + anim.glitchXShift, top = anim.offsetY) {
+                    scale(scaleX = anim.scaleMultiplier, scaleY = anim.scaleMultiplier) {
+                        if (textConfig.hasBackgroundPill) {
+                            drawRoundRect(
+                                color = Color(textConfig.backgroundColor).copy(
+                                    alpha = Color(textConfig.backgroundColor).alpha * finalAlpha
+                                ),
+                                topLeft = textOffset.copy(x = textOffset.x - 16f, y = textOffset.y - 10f),
+                                size = Size(textLayout.size.width + 32f, textLayout.size.height + 20f),
+                                cornerRadius = CornerRadius(textConfig.backgroundCornerRadius.dp.toPx())
+                            )
+                        }
+                        if (textConfig.shadowEnabled) {
+                            val shadowLayout = textMeasurer.measure(
+                                text = anim.visibleText,
+                                style = TextStyle(
+                                    fontSize = textConfig.fontSizeSp.sp,
+                                    fontWeight = weight,
+                                    fontFamily = fontFamily,
+                                    letterSpacing = spacing,
+                                    color = Color.Black.copy(alpha = 0.65f)
+                                )
+                            )
+                            drawText(
+                                textLayoutResult = shadowLayout,
+                                topLeft = textOffset + Offset(3.dp.toPx(), 3.dp.toPx()),
+                                alpha = finalAlpha
+                            )
+                        }
+                        if (textConfig.strokeWidth > 0f) {
+                            val strokeLayout = textMeasurer.measure(
+                                text = anim.visibleText,
+                                style = TextStyle(
+                                    fontSize = textConfig.fontSizeSp.sp,
+                                    fontWeight = weight,
+                                    fontFamily = fontFamily,
+                                    letterSpacing = spacing,
+                                    color = Color(textConfig.strokeColor),
+                                    drawStyle = Stroke(width = textConfig.strokeWidth * 2f)
+                                )
+                            )
+                            drawText(
+                                textLayoutResult = strokeLayout,
+                                topLeft = textOffset,
+                                alpha = finalAlpha
+                            )
+                        }
+                        drawText(
+                            textLayoutResult = textLayout,
+                            topLeft = textOffset,
+                            alpha = finalAlpha
+                        )
+                    }
                 }
-                drawText(
-                    textLayoutResult = textLayout,
-                    topLeft = textOffset,
-                    alpha = transform.opacity
-                )
             }
         }
         ClipType.ADJUSTMENT -> {

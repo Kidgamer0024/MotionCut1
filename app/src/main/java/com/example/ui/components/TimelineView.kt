@@ -431,7 +431,9 @@ fun TimelineView(
                         activeProperty = activeProperty,
                         pxPerSecond = pxPerSecond,
                         selectedClipId = selectedClipId,
-                        onSelectClip = onSelectClip
+                        onSelectClip = onSelectClip,
+                        onSeek = onSeek,
+                        onSelectProperty = onSelectProperty
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                 }
@@ -488,7 +490,9 @@ private fun TrackRow(
     activeProperty: AnimatableProperty,
     pxPerSecond: Float,
     selectedClipId: String?,
-    onSelectClip: (String?) -> Unit
+    onSelectClip: (String?) -> Unit,
+    onSeek: (Long) -> Unit,
+    onSelectProperty: (AnimatableProperty) -> Unit
 ) {
     Surface(
         color = Color(track.type.colorHex).copy(alpha = 0.25f),
@@ -553,34 +557,54 @@ private fun TrackRow(
                             modifier = Modifier.align(Alignment.TopStart)
                         )
 
-                        // Duration text
+                        // Duration & speed badge
+                        val speedLabel = buildString {
+                            append(String.format(java.util.Locale.US, "%.1fs", clip.durationMs / 1000f))
+                            if (kotlin.math.abs(clip.speed - 1.0f) > 0.02f) {
+                                append(String.format(java.util.Locale.US, " • %.2gx", clip.speed))
+                            }
+                            if (clip.isReversed) {
+                                append(" REV")
+                            }
+                        }
                         Text(
-                            text = "${clip.durationMs / 1000f}s",
+                            text = speedLabel,
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.LightGray,
+                            color = if (clip.speed != 1.0f || clip.isReversed) PlayheadAmber else Color.LightGray,
                             fontSize = 9.sp,
                             modifier = Modifier.align(Alignment.BottomStart)
                         )
 
-                        // Keyframe Diamonds drawn on clip
+                        // Keyframe Diamonds drawn on clip (tap to seek directly to keyframe!)
                         clip.keyframeTracks.forEach { (prop, kTrack) ->
                             kTrack.keyframes.forEach { kf ->
                                 val kfOffsetXDp = (kf.timeMs / 1000f * pxPerSecond).dp
-                                val isAtPlayhead = kotlin.math.abs((clip.startTimeMs + kf.timeMs) - currentTimeMs) <= 80L
+                                val kfAbsTime = clip.startTimeMs + kf.timeMs
+                                val isAtPlayhead = kotlin.math.abs(kfAbsTime - currentTimeMs) <= 160L
                                 val diamondColor = when {
                                     isAtPlayhead -> PlayheadAmber
                                     prop == activeProperty -> Color.White
                                     else -> KeyframeViolet
                                 }
-                                Icon(
-                                    imageVector = Icons.Default.Diamond,
-                                    contentDescription = "Keyframe at ${kf.timeMs}ms",
-                                    tint = diamondColor,
+                                Box(
+                                    contentAlignment = Alignment.Center,
                                     modifier = Modifier
-                                        .offset(x = kfOffsetXDp - 6.dp)
-                                        .size(12.dp)
+                                        .offset(x = kfOffsetXDp - 12.dp)
+                                        .size(24.dp)
                                         .align(Alignment.CenterStart)
-                                )
+                                        .clickable {
+                                            onSelectClip(clip.id)
+                                            onSelectProperty(prop)
+                                            onSeek(kfAbsTime)
+                                        }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Diamond,
+                                        contentDescription = "Keyframe at ${kf.timeMs}ms",
+                                        tint = diamondColor,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
                             }
                         }
 

@@ -6,364 +6,370 @@ import com.example.model.EffectSuite
 import java.util.Locale
 
 /**
- * Curated & combinatorially indexed 2,200+ effects library spanning
- * Alight Motion, Gold Motion, Ultra Motion, Node Video, and CapCut.
+ * Curated library of practical, distinct video VFX presets.
  */
 object EffectCatalog {
 
     val categories: List<String> = listOf(
         "All",
-        "Distortion",
-        "Blur",
-        "Color & LUT",
         "Light & Glow",
-        "Glitch",
-        "3D & Camera",
-        "Retro",
-        "Particles",
-        "Stylize",
-        "Transitions",
-        "Matte",
-        "Audio Reactive"
+        "Blur & Focus",
+        "Color & Look",
+        "Glitch & RGB",
+        "Camera & Shake",
+        "Lens & Warp",
+        "Retro & Film",
+        "Stylize & Matte"
     )
 
-    private data class KernelSeed(
-        val category: String,
-        val kernel: EffectKernel,
-        val baseNames: List<String>,
-        val paramALabel: String,
-        val paramBLabel: String
-    )
+    val allPresets: List<EffectPreset> by lazy {
+        listOf(
+            // --- LIGHT & GLOW ---
+            EffectPreset(
+                id = "fx_optical_glow",
+                name = "Optical Diffusion Glow",
+                suite = EffectSuite.NODE_VIDEO,
+                category = "Light & Glow",
+                kernel = EffectKernel.GLOW,
+                description = "Soft cinematic highlight bloom and atmospheric halation",
+                defaultIntensity = 0.55f,
+                defaultSpeed = 0.9f,
+                defaultParamA = 0.65f,
+                defaultParamB = 0.35f,
+                paramALabel = "Radius",
+                paramBLabel = "Pulse",
+                tags = listOf("glow", "bloom", "halation", "dream")
+            ),
+            EffectPreset(
+                id = "fx_light_sweep",
+                name = "Anamorphic Light Sweep",
+                suite = EffectSuite.GOLD_MOTION,
+                category = "Light & Glow",
+                kernel = EffectKernel.LIGHT_SWEEP,
+                description = "Diagonal metallic light beam sweeping smoothly across titles and clips",
+                defaultIntensity = 0.72f,
+                defaultSpeed = 1.0f,
+                defaultParamA = 0.45f,
+                defaultParamB = 0.25f,
+                paramALabel = "Beam Width",
+                paramBLabel = "Offset",
+                tags = listOf("sweep", "shine", "flare", "title")
+            ),
+            EffectPreset(
+                id = "fx_gold_rim_bloom",
+                name = "Golden Rim Sheen",
+                suite = EffectSuite.GOLD_MOTION,
+                category = "Light & Glow",
+                kernel = EffectKernel.STARBURST,
+                description = "Warm radial light rays and specular highlight catch",
+                defaultIntensity = 0.58f,
+                defaultSpeed = 0.8f,
+                defaultParamA = 0.55f,
+                defaultParamB = 0.40f,
+                paramALabel = "Ray Span",
+                paramBLabel = "Rotation",
+                tags = listOf("rays", "sun", "gold", "starburst")
+            ),
+            EffectPreset(
+                id = "fx_atmospheric_dust",
+                name = "Floating Dust & Bokeh",
+                suite = EffectSuite.CAPCUT,
+                category = "Light & Glow",
+                kernel = EffectKernel.PARTICLE_SPARK,
+                description = "Subtle drifting atmospheric embers and micro bokeh motes",
+                defaultIntensity = 0.60f,
+                defaultSpeed = 0.75f,
+                defaultParamA = 0.50f,
+                defaultParamB = 0.40f,
+                paramALabel = "Density",
+                paramBLabel = "Drift",
+                tags = listOf("particles", "dust", "bokeh", "sparks")
+            ),
 
-    private val categorySeeds: List<KernelSeed> = listOf(
-        KernelSeed(
-            category = "Distortion",
-            kernel = EffectKernel.WAVE_WARP,
-            baseNames = listOf(
-                "Tiles", "Oscillate", "Wave Warp", "Turbulent Displace", "Fractal Warp",
-                "Swirl", "Pinch & Bulge", "Circular Ripple", "Polar Coordinates", "Squeeze",
-                "Liquid Flow", "Stretch Axis", "Flag Flutter", "Elastic Warp"
+            // --- BLUR & FOCUS ---
+            EffectPreset(
+                id = "fx_directional_blur",
+                name = "Directional Whip Blur",
+                suite = EffectSuite.ALIGHT_MOTION,
+                category = "Blur & Focus",
+                kernel = EffectKernel.MOTION_BLUR,
+                description = "Directional speed streaks ideal for fast camera pans and beat transitions",
+                defaultIntensity = 0.65f,
+                defaultSpeed = 1.3f,
+                defaultParamA = 0.60f,
+                defaultParamB = 0.50f,
+                paramALabel = "Streak",
+                paramBLabel = "Phase",
+                tags = listOf("blur", "whip", "motion", "speed")
             ),
-            paramALabel = "Frequency",
-            paramBLabel = "Phase"
-        ),
-        KernelSeed(
-            category = "Distortion",
-            kernel = EffectKernel.KALEIDOSCOPE,
-            baseNames = listOf(
-                "Kaleidoscope", "Mirror Tile", "Hexagon Fold", "Prism Mirror", "Radial Fold"
+            EffectPreset(
+                id = "fx_soft_focus_vignette",
+                name = "Portrait Edge Focus",
+                suite = EffectSuite.CAPCUT,
+                category = "Blur & Focus",
+                kernel = EffectKernel.VIGNETTE,
+                description = "Draws viewer attention inward with smooth radial corner falloff",
+                defaultIntensity = 0.55f,
+                defaultSpeed = 1.0f,
+                defaultParamA = 0.45f,
+                defaultParamB = 0.50f,
+                paramALabel = "Tightness",
+                paramBLabel = "Falloff",
+                tags = listOf("vignette", "focus", "portrait", "spotlight")
             ),
-            paramALabel = "Segments",
-            paramBLabel = "Angle"
-        ),
-        KernelSeed(
-            category = "Blur",
-            kernel = EffectKernel.MOTION_BLUR,
-            baseNames = listOf(
-                "Directional Blur", "Gaussian Blur", "Zoom Blur", "Spin Blur", "Whip Blur",
-                "Lens Blur", "Box Blur", "Tilt-Shift Focus", "Chroma Blur", "Velocity Trail",
-                "Ghost Motion", "Speed Streaks"
+            EffectPreset(
+                id = "fx_privacy_mosaic",
+                name = "Censor / Mosaic Blur",
+                suite = EffectSuite.CAPCUT,
+                category = "Blur & Focus",
+                kernel = EffectKernel.PIXELATE,
+                description = "Clean square mosaic grid useful for faces, plates, or stylized pixel art",
+                defaultIntensity = 0.68f,
+                defaultSpeed = 1.0f,
+                defaultParamA = 0.55f,
+                defaultParamB = 0.50f,
+                paramALabel = "Block Size",
+                paramBLabel = "Grid Alpha",
+                tags = listOf("pixelate", "mosaic", "censor", "privacy")
             ),
-            paramALabel = "Angle",
-            paramBLabel = "Samples"
-        ),
-        KernelSeed(
-            category = "Color & LUT",
-            kernel = EffectKernel.COLOR_PULSE,
-            baseNames = listOf(
-                "Exposure / Gamma", "Hue Shift", "Channel Remap", "Hot Color Boost", "Gradient Map",
-                "Duotone Matte", "Colorama", "Vibrance Lift", "Solarize Tint", "Color Pulse",
-                "Split Tone Gold", "Teal & Amber"
+
+            // --- COLOR & LOOK ---
+            EffectPreset(
+                id = "fx_beat_color_pulse",
+                name = "Harmonic Color Pulse",
+                suite = EffectSuite.ULTRA_MOTION,
+                category = "Color & Look",
+                kernel = EffectKernel.COLOR_PULSE,
+                description = "Smooth ambient spectrum wash synced cleanly over dark or neutral clips",
+                defaultIntensity = 0.48f,
+                defaultSpeed = 0.9f,
+                defaultParamA = 0.50f,
+                defaultParamB = 0.25f,
+                paramALabel = "Chroma",
+                paramBLabel = "Hue Start",
+                tags = listOf("color", "hue", "wash", "music")
             ),
-            paramALabel = "Hue Shift",
-            paramBLabel = "Contrast"
-        ),
-        KernelSeed(
-            category = "Light & Glow",
-            kernel = EffectKernel.GLOW,
-            baseNames = listOf(
-                "Diffusion Glow", "Bloom Mist", "Optical Flare", "Saber Rim", "Halo Aura",
-                "Light Rays", "God Rays", "Exposure Flash", "Soft Light Leak", "Edge Bloom"
+            EffectPreset(
+                id = "fx_cinema_vignette_deep",
+                name = "Cinema Theater Vignette",
+                suite = EffectSuite.NODE_VIDEO,
+                category = "Color & Look",
+                kernel = EffectKernel.VIGNETTE,
+                description = "Deep moody corner darkening calibrated for dramatic storytelling",
+                defaultIntensity = 0.78f,
+                defaultSpeed = 1.0f,
+                defaultParamA = 0.62f,
+                defaultParamB = 0.50f,
+                paramALabel = "Radius",
+                paramBLabel = "Feather",
+                tags = listOf("noir", "drama", "vignette", "cinema")
             ),
-            paramALabel = "Radius",
-            paramBLabel = "Threshold"
-        ),
-        KernelSeed(
-            category = "Light & Glow",
-            kernel = EffectKernel.LIGHT_SWEEP,
-            baseNames = listOf(
-                "Light Sweep", "Trophy Shine", "Metallic Gleam", "Anamorphic Streak", "Laser Scan",
-                "Starburst Glint"
+
+            // --- GLITCH & RGB ---
+            EffectPreset(
+                id = "fx_rgb_split",
+                name = "RGB Chromatic Split",
+                suite = EffectSuite.ALIGHT_MOTION,
+                category = "Glitch & RGB",
+                kernel = EffectKernel.CHROMATIC_ABERRATION,
+                description = "Cyan and crimson channel separation for impact hits and intros",
+                defaultIntensity = 0.65f,
+                defaultSpeed = 1.1f,
+                defaultParamA = 0.52f,
+                defaultParamB = 0.30f,
+                paramALabel = "Spread",
+                paramBLabel = "Angle",
+                tags = listOf("rgb", "chromatic", "split", "glitch")
             ),
-            paramALabel = "Width",
-            paramBLabel = "Angle"
-        ),
-        KernelSeed(
-            category = "Glitch",
-            kernel = EffectKernel.CHROMATIC_ABERRATION,
-            baseNames = listOf(
-                "RGB Split", "Spectral Shift", "Chromatic Prism", "Analog Fringe", "RGB Shake",
-                "3D Anaglyph Split", "Channel Offset", "Holo Split"
+            EffectPreset(
+                id = "fx_prism_refract",
+                name = "Crystal Prism Shift",
+                suite = EffectSuite.ULTRA_MOTION,
+                category = "Glitch & RGB",
+                kernel = EffectKernel.PRISM_SHIFT,
+                description = "Optical spectral refraction around high-motion frames",
+                defaultIntensity = 0.60f,
+                defaultSpeed = 1.4f,
+                defaultParamA = 0.70f,
+                defaultParamB = 0.50f,
+                paramALabel = "Dispersion",
+                paramBLabel = "Phase",
+                tags = listOf("prism", "refraction", "spectral")
             ),
-            paramALabel = "Spread",
-            paramBLabel = "Angle"
-        ),
-        KernelSeed(
-            category = "Glitch",
-            kernel = EffectKernel.GLITCH_BLOCK,
-            baseNames = listOf(
-                "Digital Glitch", "Pixel Tear", "Signal Corruption", "Block Slice", "Cyber Static",
-                "Data Mosh", "Bad Reception", "Frame Stutter"
+            EffectPreset(
+                id = "fx_digital_glitch",
+                name = "Digital Tear Glitch",
+                suite = EffectSuite.ULTRA_MOTION,
+                category = "Glitch & RGB",
+                kernel = EffectKernel.GLITCH_BLOCK,
+                description = "Horizontal signal slice displacements for high-energy cuts",
+                defaultIntensity = 0.66f,
+                defaultSpeed = 1.5f,
+                defaultParamA = 0.55f,
+                defaultParamB = 0.40f,
+                paramALabel = "Slice Height",
+                paramBLabel = "Jitter",
+                tags = listOf("glitch", "tear", "cyber", "transition")
             ),
-            paramALabel = "Block Size",
-            paramBLabel = "Jitter"
-        ),
-        KernelSeed(
-            category = "3D & Camera",
-            kernel = EffectKernel.LENS_DISTORTION,
-            baseNames = listOf(
-                "Anamorphic Lens", "Fisheye Dome", "Sphere Wrap", "Cylinder Bend", "Perspective Tilt",
-                "3D Card Flip", "Page Turn", "Tunnel Warp", "Convex Glass"
+
+            // --- CAMERA & SHAKE ---
+            EffectPreset(
+                id = "fx_handheld_shake",
+                name = "Natural Handheld Camera",
+                suite = EffectSuite.CAPCUT,
+                category = "Camera & Shake",
+                kernel = EffectKernel.CAMERA_SHAKE,
+                description = "Subtle organic handheld sway that brings static photos and text to life",
+                defaultIntensity = 0.36f,
+                defaultSpeed = 0.85f,
+                defaultParamA = 0.35f,
+                defaultParamB = 0.25f,
+                paramALabel = "Amplitude",
+                paramBLabel = "Seed",
+                tags = listOf("handheld", "camera", "organic", "motion")
             ),
-            paramALabel = "Curvature",
-            paramBLabel = "FOV"
-        ),
-        KernelSeed(
-            category = "3D & Camera",
-            kernel = EffectKernel.CAMERA_SHAKE,
-            baseNames = listOf(
-                "Action Cam Shake", "Handheld Camera", "Sub-Bass Earthquake", "Swing Pendulum",
-                "Randomize Dolly", "Micro Jitter", "Impact Slam", "Orbit Wobble"
+            EffectPreset(
+                id = "fx_bass_impact_shake",
+                name = "Impact Drop Shake",
+                suite = EffectSuite.ULTRA_MOTION,
+                category = "Camera & Shake",
+                kernel = EffectKernel.CAMERA_SHAKE,
+                description = "Punchy kinetic turbulence for beat drops and action impacts",
+                defaultIntensity = 0.82f,
+                defaultSpeed = 1.8f,
+                defaultParamA = 0.78f,
+                defaultParamB = 0.50f,
+                paramALabel = "Punch",
+                paramBLabel = "Frequency",
+                tags = listOf("impact", "drop", "shake", "action")
             ),
-            paramALabel = "Amplitude",
-            paramBLabel = "Damping"
-        ),
-        KernelSeed(
-            category = "Retro",
-            kernel = EffectKernel.SCANLINES,
-            baseNames = listOf(
-                "CRT Scanlines", "VHS Tracking", "Betamax Tape", "Arcade Phosphor", "MiniDV Timecode",
-                "CCTV Monitor"
+
+            // --- LENS & WARP ---
+            EffectPreset(
+                id = "fx_anamorphic_lens",
+                name = "Anamorphic Barrel Lens",
+                suite = EffectSuite.NODE_VIDEO,
+                category = "Lens & Warp",
+                kernel = EffectKernel.LENS_DISTORTION,
+                description = "Curved optical cinema glass framing around frame perimeter",
+                defaultIntensity = 0.58f,
+                defaultSpeed = 1.0f,
+                defaultParamA = 0.45f,
+                defaultParamB = 0.50f,
+                paramALabel = "Curvature",
+                paramBLabel = "Ring Size",
+                tags = listOf("lens", "fisheye", "anamorphic", "cinema")
             ),
-            paramALabel = "Line Pitch",
-            paramBLabel = "Tracking"
-        ),
-        KernelSeed(
-            category = "Retro",
-            kernel = EffectKernel.FILM_GRAIN,
-            baseNames = listOf(
-                "35mm Film Grain", "Super 8 Dust", "Kodak Warm Noise", "16mm Cinema", "Sepia Archival",
-                "Gate Weave"
+            EffectPreset(
+                id = "fx_liquid_wave_warp",
+                name = "Liquid Wave Warp",
+                suite = EffectSuite.ALIGHT_MOTION,
+                category = "Lens & Warp",
+                kernel = EffectKernel.WAVE_WARP,
+                description = "Smooth sinusoidal heat/water ripple modulation",
+                defaultIntensity = 0.52f,
+                defaultSpeed = 1.1f,
+                defaultParamA = 0.48f,
+                defaultParamB = 0.30f,
+                paramALabel = "Frequency",
+                paramBLabel = "Phase",
+                tags = listOf("wave", "water", "dream", "warp")
             ),
-            paramALabel = "Grain Size",
-            paramBLabel = "Softness"
-        ),
-        KernelSeed(
-            category = "Particles",
-            kernel = EffectKernel.PARTICLE_SPARK,
-            baseNames = listOf(
-                "Gold Dust", "Ember Sparks", "Snowdrift Flakes", "Rainfall Streaks", "Bokeh Orbs",
-                "Sakura Drift", "Cyber Matrix", "Stardust Float"
+            EffectPreset(
+                id = "fx_kaleido_mirror",
+                name = "Kaleidoscope Symmetry",
+                suite = EffectSuite.ALIGHT_MOTION,
+                category = "Lens & Warp",
+                kernel = EffectKernel.KALEIDOSCOPE,
+                description = "Rotating radial symmetry planes for music visuals",
+                defaultIntensity = 0.58f,
+                defaultSpeed = 0.8f,
+                defaultParamA = 0.50f,
+                defaultParamB = 0.20f,
+                paramALabel = "Slices",
+                paramBLabel = "Spin",
+                tags = listOf("kaleidoscope", "symmetry", "mirror")
             ),
-            paramALabel = "Density",
-            paramBLabel = "Drift"
-        ),
-        KernelSeed(
-            category = "Stylize",
-            kernel = EffectKernel.PIXELATE,
-            baseNames = listOf(
-                "Mosaic Pixelate", "Posterize 8-Bit", "Block Censor", "Crystallize", "Stained Glass"
+            EffectPreset(
+                id = "fx_split_mirror",
+                name = "Split Frame Mirror",
+                suite = EffectSuite.CAPCUT,
+                category = "Lens & Warp",
+                kernel = EffectKernel.MIRROR_SPLIT,
+                description = "Crisp geometric axis split overlay for montage compositions",
+                defaultIntensity = 0.62f,
+                defaultSpeed = 0.4f,
+                defaultParamA = 0.25f,
+                defaultParamB = 0.0f,
+                paramALabel = "Splits",
+                paramBLabel = "Tilt",
+                tags = listOf("mirror", "split", "montage")
             ),
-            paramALabel = "Cell Size",
-            paramBLabel = "Sharpness"
-        ),
-        KernelSeed(
-            category = "Stylize",
-            kernel = EffectKernel.NEON_EDGES,
-            baseNames = listOf(
-                "Find Edges Neon", "Saber Contour", "Sketch Ink", "Emboss Relief", "Halftone Dot Matrix"
+
+            // --- RETRO & FILM ---
+            EffectPreset(
+                id = "fx_35mm_film_grain",
+                name = "35mm Kodak Film Grain",
+                suite = EffectSuite.GOLD_MOTION,
+                category = "Retro & Film",
+                kernel = EffectKernel.FILM_GRAIN,
+                description = "Organic silver-halide emulsion texture to remove digital sterility",
+                defaultIntensity = 0.52f,
+                defaultSpeed = 1.0f,
+                defaultParamA = 0.50f,
+                defaultParamB = 0.40f,
+                paramALabel = "Density",
+                paramBLabel = "Texture",
+                tags = listOf("film", "35mm", "grain", "analog")
             ),
-            paramALabel = "Edge Boost",
-            paramBLabel = "Threshold"
-        ),
-        KernelSeed(
-            category = "Transitions",
-            kernel = EffectKernel.PRISM_SHIFT,
-            baseNames = listOf(
-                "Whip Pan Flash", "Prism Refraction", "Slide Tile In", "Zoom Dissolve",
-                "Burn Exposure", "Spin Swap", "Glitch Cut", "Diamond Iris"
+            EffectPreset(
+                id = "fx_crt_scanlines",
+                name = "CRT Monitor Scanlines",
+                suite = EffectSuite.CAPCUT,
+                category = "Retro & Film",
+                kernel = EffectKernel.SCANLINES,
+                description = "Authentic broadcast CRT raster lines and gentle roll",
+                defaultIntensity = 0.58f,
+                defaultSpeed = 1.0f,
+                defaultParamA = 0.52f,
+                defaultParamB = 0.30f,
+                paramALabel = "Line Pitch",
+                paramBLabel = "Roll",
+                tags = listOf("crt", "vhs", "retro", "scanlines")
             ),
-            paramALabel = "Curve",
-            paramBLabel = "Blur"
-        ),
-        KernelSeed(
-            category = "Matte",
-            kernel = EffectKernel.VIGNETTE,
-            baseNames = listOf(
-                "Vignette Spotlight", "Chroma Key Assist", "Luma Matte", "Wipe Strip",
-                "Radial Feather", "Cinema Bars Matte"
+
+            // --- STYLIZE & MATTE ---
+            EffectPreset(
+                id = "fx_neon_saber_frame",
+                name = "Neon Saber Contour",
+                suite = EffectSuite.NODE_VIDEO,
+                category = "Stylize & Matte",
+                kernel = EffectKernel.NEON_EDGES,
+                description = "Glowing neon border outline ideal for highlight callouts",
+                defaultIntensity = 0.72f,
+                defaultSpeed = 1.0f,
+                defaultParamA = 0.55f,
+                defaultParamB = 0.50f,
+                paramALabel = "Stroke",
+                paramBLabel = "Glow",
+                tags = listOf("neon", "saber", "border", "outline")
             ),
-            paramALabel = "Feather",
-            paramBLabel = "Roundness"
-        ),
-        KernelSeed(
-            category = "Audio Reactive",
-            kernel = EffectKernel.STARBURST,
-            baseNames = listOf(
-                "Bass Beat Scale", "Spectrum Aura", "Drop Flash", "Kick Camera Punch",
-                "Hi-Hat Spark", "Tempo Glow Pulse", "808 Wave"
-            ),
-            paramALabel = "Sensitivity",
-            paramBLabel = "Attack"
+            EffectPreset(
+                id = "fx_halftone_comic",
+                name = "Halftone Comic Print",
+                suite = EffectSuite.NODE_VIDEO,
+                category = "Stylize & Matte",
+                kernel = EffectKernel.HALFTONE,
+                description = "Clean magazine dot-matrix screen pattern overlay",
+                defaultIntensity = 0.60f,
+                defaultSpeed = 1.0f,
+                defaultParamA = 0.50f,
+                defaultParamB = 0.50f,
+                paramALabel = "Dot Pitch",
+                paramBLabel = "Contrast",
+                tags = listOf("halftone", "comic", "print", "dots")
+            )
         )
-    )
-
-    private val suiteSignatures: Map<EffectSuite, List<Pair<String, EffectKernel>>> = mapOf(
-        EffectSuite.ALIGHT_MOTION to listOf(
-            "Alight Tiles Mirror" to EffectKernel.WAVE_WARP,
-            "Alight Oscillate Swing" to EffectKernel.CAMERA_SHAKE,
-            "Alight Turbulent Displace" to EffectKernel.WAVE_WARP,
-            "Alight Strip Repeat" to EffectKernel.MIRROR_SPLIT,
-            "Alight Smooth Bevel Glow" to EffectKernel.GLOW,
-            "Alight Squeeze & Stretch" to EffectKernel.LENS_DISTORTION,
-            "Alight Fractal Ridges" to EffectKernel.NEON_EDGES,
-            "Alight Directional Whip" to EffectKernel.MOTION_BLUR
-        ),
-        EffectSuite.GOLD_MOTION to listOf(
-            "Gold 24K Luxury Bloom" to EffectKernel.GLOW,
-            "Gold Foil Shimmer" to EffectKernel.PARTICLE_SPARK,
-            "Gold Champagne Sweep" to EffectKernel.LIGHT_SWEEP,
-            "Gold Chrome Specular" to EffectKernel.PRISM_SHIFT,
-            "Gold Velvet Vignette" to EffectKernel.VIGNETTE,
-            "Gold Gilded Edge" to EffectKernel.NEON_EDGES,
-            "Gold Warm 35mm" to EffectKernel.FILM_GRAIN,
-            "Gold Drop Impact" to EffectKernel.CAMERA_SHAKE
-        ),
-        EffectSuite.ULTRA_MOTION to listOf(
-            "Ultra Velocity Shake" to EffectKernel.CAMERA_SHAKE,
-            "Ultra Hyper-Prism" to EffectKernel.PRISM_SHIFT,
-            "Ultra Kinetic Echo" to EffectKernel.MOTION_BLUR,
-            "Ultra RGB Overload" to EffectKernel.CHROMATIC_ABERRATION,
-            "Ultra Neon Ray" to EffectKernel.STARBURST,
-            "Ultra Cyber Slice" to EffectKernel.GLITCH_BLOCK,
-            "Ultra Tempo Flash" to EffectKernel.COLOR_PULSE,
-            "Ultra Warp Horizon" to EffectKernel.LENS_DISTORTION
-        ),
-        EffectSuite.NODE_VIDEO to listOf(
-            "Node Glow Saber" to EffectKernel.NEON_EDGES,
-            "Node Raindrops Glass" to EffectKernel.PARTICLE_SPARK,
-            "Node 3D Camera Orbit" to EffectKernel.LENS_DISTORTION,
-            "Node Ray-Marched Shine" to EffectKernel.LIGHT_SWEEP,
-            "Node Radial God Rays" to EffectKernel.STARBURST,
-            "Node RGB Chromatic" to EffectKernel.CHROMATIC_ABERRATION,
-            "Node Halftone Print" to EffectKernel.HALFTONE,
-            "Node Audio Spectrum" to EffectKernel.COLOR_PULSE
-        ),
-        EffectSuite.CAPCUT to listOf(
-            "CapCut Diamond Zoom" to EffectKernel.LENS_DISTORTION,
-            "CapCut Retro DV Cam" to EffectKernel.SCANLINES,
-            "CapCut Rebound Swing" to EffectKernel.CAMERA_SHAKE,
-            "CapCut Halo Dream Blur" to EffectKernel.GLOW,
-            "CapCut Playful Glitch" to EffectKernel.GLITCH_BLOCK,
-            "CapCut Astral Prism" to EffectKernel.PRISM_SHIFT,
-            "CapCut Club Beat Flash" to EffectKernel.STARBURST,
-            "CapCut Soft Pixel" to EffectKernel.PIXELATE
-        )
-    )
-
-    private val styleVariants: List<Pair<String, Float>> = listOf(
-        "Classic" to 0.55f,
-        "Pro" to 0.72f,
-        "Soft" to 0.35f,
-        "Extreme" to 0.90f,
-        "Smooth" to 0.45f,
-        "Turbo" to 0.85f
-    )
-
-    val allPresets: List<EffectPreset> by lazy { buildCatalog() }
-
-    private fun buildCatalog(): List<EffectPreset> {
-        val list = ArrayList<EffectPreset>(2400)
-        val suites = listOf(
-            EffectSuite.ALIGHT_MOTION,
-            EffectSuite.GOLD_MOTION,
-            EffectSuite.ULTRA_MOTION,
-            EffectSuite.NODE_VIDEO,
-            EffectSuite.CAPCUT
-        )
-
-        var seq = 1
-        // 1. Add flagship signature presets per suite (8 each = 40)
-        suites.forEach { suite ->
-            suiteSignatures[suite].orEmpty().forEach { (sigName, kernel) ->
-                val cat = categorySeeds.firstOrNull { it.kernel == kernel }?.category ?: "Stylize"
-                list.add(
-                    EffectPreset(
-                        id = "fx_sig_${suite.name.lowercase(Locale.US)}_$seq",
-                        name = sigName,
-                        suite = suite,
-                        category = cat,
-                        kernel = kernel,
-                        description = "${suite.displayName} signature preset ($cat)",
-                        defaultIntensity = 0.65f,
-                        defaultSpeed = 1.0f,
-                        defaultParamA = 0.55f,
-                        defaultParamB = 0.45f,
-                        paramALabel = "Strength",
-                        paramBLabel = "Phase",
-                        tags = listOf(suite.displayName, suite.shortName, cat, "signature")
-                    )
-                )
-                seq++
-            }
-        }
-
-        // 2. Expand curated category kernels × suites × variants (~2,200+ effects)
-        for (suite in suites) {
-            for (seed in categorySeeds) {
-                for (baseName in seed.baseNames) {
-                    for ((variantLabel, baseIntensity) in styleVariants) {
-                        val displayName = if (variantLabel == "Classic") {
-                            "${suite.shortName}: $baseName"
-                        } else {
-                            "${suite.shortName}: $baseName ($variantLabel)"
-                        }
-                        val speedFactor = when (variantLabel) {
-                            "Turbo", "Extreme" -> 1.6f
-                            "Smooth", "Soft" -> 0.7f
-                            else -> 1.0f
-                        }
-                        val paramA = ((seq % 9) + 1) / 10f
-                        val paramB = (((seq * 3) % 9) + 1) / 10f
-                        list.add(
-                            EffectPreset(
-                                id = "fx_${suite.shortName.lowercase(Locale.US)}_$seq",
-                                name = displayName,
-                                suite = suite,
-                                category = seed.category,
-                                kernel = seed.kernel,
-                                description = "${suite.displayName} ${seed.category} engine — $baseName ($variantLabel)",
-                                defaultIntensity = baseIntensity,
-                                defaultSpeed = speedFactor,
-                                defaultParamA = paramA,
-                                defaultParamB = paramB,
-                                paramALabel = seed.paramALabel,
-                                paramBLabel = seed.paramBLabel,
-                                tags = listOf(
-                                    suite.displayName.lowercase(Locale.US),
-                                    seed.category.lowercase(Locale.US),
-                                    baseName.lowercase(Locale.US),
-                                    variantLabel.lowercase(Locale.US)
-                                )
-                            )
-                        )
-                        seq++
-                    }
-                }
-            }
-        }
-
-        return list
     }
 
     fun countForSuite(suite: EffectSuite): Int {
@@ -385,11 +391,13 @@ object EffectCatalog {
             val favOk = !favoritesOnly || favoriteIds.contains(preset.id)
             val queryOk = q.isEmpty() ||
                 preset.name.lowercase(Locale.US).contains(q) ||
+                preset.description.lowercase(Locale.US).contains(q) ||
                 preset.category.lowercase(Locale.US).contains(q) ||
-                preset.suite.displayName.lowercase(Locale.US).contains(q)
+                preset.tags.any { it.contains(q) }
             suiteOk && catOk && favOk && queryOk
         }
     }
 
     fun findById(presetId: String): EffectPreset? = allPresets.firstOrNull { it.id == presetId }
 }
+

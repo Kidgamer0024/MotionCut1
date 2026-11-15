@@ -73,6 +73,7 @@ service cloud.firestore {
              data.trackCount is int &&
              data.trackCount >= 0 &&
              data.trackCount <= 500 &&
+             (!('projectJson' in data) || (data.projectJson is string && data.projectJson.size() <= 900000)) &&
              data.createdAt is timestamp &&
              data.createdAt <= request.time &&
              data.updatedAt is timestamp &&
@@ -134,6 +135,7 @@ service cloud.firestore {
                            'thumbnailResId',
                            'clipCount',
                            'trackCount',
+                           'projectJson',
                            'createdAt',
                            'updatedAt'
                          ]) &&
@@ -159,6 +161,7 @@ service cloud.firestore {
                              'thumbnailResId',
                              'clipCount',
                              'trackCount',
+                             'projectJson',
                              'updatedAt'
                            ])
                          );

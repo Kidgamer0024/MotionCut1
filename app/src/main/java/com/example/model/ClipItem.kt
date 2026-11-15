@@ -48,6 +48,34 @@ data class ShapeConfig(
     val cornerRadius: Float = 16f
 )
 
+enum class TextFontChoice(val displayName: String, val fontKey: String) {
+    SYSTEM_SANS("Modern Sans", "sans"),
+    SYSTEM_SERIF("Editorial Serif", "serif"),
+    SYSTEM_MONO("Studio Mono", "mono"),
+    BEBAS_NEUE("Bebas Neue", "bebas_neue"),
+    CINZEL("Cinzel Display", "cinzel"),
+    PACIFICO("Pacifico Script", "pacifico"),
+    PLAYFAIR_DISPLAY("Playfair Display", "playfair_display"),
+    SPACE_GROTESK("Space Grotesk", "space_grotesk"),
+    JETBRAINS_MONO("JetBrains Mono", "jetbrains_mono"),
+    OSWALD("Oswald Impact", "oswald"),
+    MONTSERRAT("Montserrat Pro", "montserrat"),
+    RIGHTEOUS("Righteous Retro", "righteous"),
+    PERMANENT_MARKER("Marker Brush", "permanent_marker")
+}
+
+enum class TextAnimationType(val label: String) {
+    NONE("Static"),
+    TYPEWRITER("Typewriter"),
+    FADE_POP("Fade & Pop"),
+    SLIDE_UP("Slide Up"),
+    BOUNCE_IN("Bounce In"),
+    GLITCH_FLICKER("Glitch Flicker"),
+    KARAOKE_WAVE("Wave Reveal"),
+    ZOOM_BURST("Zoom Burst"),
+    TRACKING_REVEAL("Tracking Expand")
+}
+
 data class TextConfig(
     val text: String = "MOTION CUT",
     val fontSizeSp: Float = 32f,
@@ -55,7 +83,24 @@ data class TextConfig(
     val isBold: Boolean = true,
     val strokeColor: Long = 0xFF000000,
     val strokeWidth: Float = 2f,
-    val letterSpacing: Float = 2f
+    val letterSpacing: Float = 2f,
+    val fontChoice: TextFontChoice = TextFontChoice.MONTSERRAT,
+    val animationType: TextAnimationType = TextAnimationType.NONE,
+    val animationSpeed: Float = 1.0f,
+    val hasBackgroundPill: Boolean = false,
+    val backgroundColor: Long = 0xAA0A0E17,
+    val backgroundCornerRadius: Float = 14f,
+    val shadowEnabled: Boolean = true,
+    val templateId: String? = null
+)
+
+data class CameraTrackPoint(
+    val timeMs: Long,
+    val x: Float,
+    val y: Float,
+    val scale: Float = 1f,
+    val rotation: Float = 0f,
+    val confidence: Float = 1f
 )
 
 data class TransformState(
@@ -78,6 +123,8 @@ data class ClipItem(
     val startTimeMs: Long,
     val durationMs: Long,
     val speed: Float = 1.0f,
+    val preserveAudioPitch: Boolean = true,
+    val isReversed: Boolean = false,
     val volume: Float = 1.0f,
     val isLocked: Boolean = false,
     val baseTransform: TransformState = TransformState(),
@@ -88,7 +135,8 @@ data class ClipItem(
     val textConfig: TextConfig? = null,
     val shapeConfig: ShapeConfig? = null,
     val model3dConfig: Model3DConfig? = null,
-    val waveformSamples: List<Float> = emptyList()
+    val waveformSamples: List<Float> = emptyList(),
+    val cameraTrackPoints: List<CameraTrackPoint> = emptyList()
 ) {
     val endTimeMs: Long
         get() = startTimeMs + durationMs
@@ -96,12 +144,12 @@ data class ClipItem(
     fun hasKeyframeAt(property: AnimatableProperty, timeMs: Long): Boolean {
         if (timeMs !in startTimeMs..endTimeMs) return false
         val relTime = (timeMs - startTimeMs).coerceIn(0L, durationMs)
-        return keyframeTracks[property]?.getKeyframeAt(relTime, toleranceMs = 80L) != null
+        return keyframeTracks[property]?.getKeyframeAt(relTime, toleranceMs = 160L) != null
     }
 
     fun hasAnyKeyframeAt(timeMs: Long): Boolean {
         if (timeMs !in startTimeMs..endTimeMs) return false
         val relTime = (timeMs - startTimeMs).coerceIn(0L, durationMs)
-        return keyframeTracks.values.any { it.getKeyframeAt(relTime, toleranceMs = 80L) != null }
+        return keyframeTracks.values.any { it.getKeyframeAt(relTime, toleranceMs = 160L) != null }
     }
 }

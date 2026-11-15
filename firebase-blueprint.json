@@ -79,6 +79,10 @@
           "type": "integer",
           "description": "Total number of tracks in the project."
         },
+        "projectJson": {
+          "type": "string",
+          "description": "Serialized full timeline state (tracks, clips, keyframes, effects, masks, 3D config)."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",

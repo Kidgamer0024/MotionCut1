@@ -16,6 +16,11 @@ enum class AnimatableProperty(val displayName: String, val unit: String, val def
     FOV_3D("Camera FOV", "°", 45f, 20f, 110f)
 }
 
+data class CurveBreakpoint(
+    val x: Float,
+    val y: Float
+)
+
 sealed class EasingType(val label: String) {
     object Linear : EasingType("Linear")
     object EaseIn : EasingType("Ease In")
@@ -27,6 +32,13 @@ sealed class EasingType(val label: String) {
         val p2x: Float = 0.58f,
         val p2y: Float = 1.0f
     ) : EasingType("Bezier Graph")
+    data class MultiPoint(
+        val points: List<CurveBreakpoint> = listOf(
+            CurveBreakpoint(0.25f, 0.1f),
+            CurveBreakpoint(0.55f, 0.85f),
+            CurveBreakpoint(0.8f, 0.65f)
+        )
+    ) : EasingType("Breakpoints")
     object Bounce : EasingType("Bounce")
     object Elastic : EasingType("Elastic")
 }
@@ -42,7 +54,8 @@ data class KeyframeTrack(
     val property: AnimatableProperty,
     val keyframes: List<Keyframe> = emptyList()
 ) {
-    fun getKeyframeAt(timeMs: Long, toleranceMs: Long = 60L): Keyframe? {
-        return keyframes.firstOrNull { kotlin.math.abs(it.timeMs - timeMs) <= toleranceMs }
+    fun getKeyframeAt(timeMs: Long, toleranceMs: Long = 160L): Keyframe? {
+        return keyframes.minByOrNull { kotlin.math.abs(it.timeMs - timeMs) }
+            ?.takeIf { kotlin.math.abs(it.timeMs - timeMs) <= toleranceMs }
     }
 }

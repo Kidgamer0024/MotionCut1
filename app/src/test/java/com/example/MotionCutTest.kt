@@ -580,9 +580,17 @@ class MotionCutTest {
         val mediaItems = com.example.data.DeviceMediaScanner.loadDeviceAndStudioMedia(context)
         val audioItems = com.example.data.DeviceMediaScanner.loadDeviceAndStudioAudio(context)
 
-        assertTrue(mediaItems.isNotEmpty())
-        assertTrue(mediaItems.any { it.isVideo })
-        assertTrue(audioItems.isNotEmpty())
+        // Studio sample video fixtures are completely removed; only real device/imported items appear
+        assertTrue(mediaItems.none { it.folderName.equals("Studio", ignoreCase = true) })
+        assertTrue(mediaItems.none { it.title.contains("Studio", ignoreCase = true) && !it.isDeviceFile })
+
+        // Verify transparent PNG bitmap decoding preserves ARGB_8888 alpha & detects .png as image
+        val opts = com.example.data.DeviceMediaScanner.transparentBitmapOptions(1)
+        assertEquals(android.graphics.Bitmap.Config.ARGB_8888, opts.inPreferredConfig)
+        assertTrue(opts.inPremultiplied)
+        assertFalse(com.example.data.DeviceMediaScanner.isVideoUri(context, "file:///tmp/logo_cutout.png", isVideoHint = true))
+        assertTrue(com.example.data.DeviceMediaScanner.isVideoUri(context, "file:///tmp/scene.mp4", isVideoHint = false))
+
         assertTrue(audioItems.all { it.waveformSamples.isNotEmpty() })
     }
 
@@ -741,37 +749,27 @@ class MotionCutTest {
     }
 
     @Test
-    fun testMultiSuite2000PlusEffectCatalogAndApplication() {
+    fun testMultiSuiteCuratedEffectCatalogAndApplication() {
         val all = com.example.data.EffectCatalog.allPresets
-        assertTrue("Expected at least 2000 presets, got ${all.size}", all.size >= 2000)
+        assertTrue("Expected curated effects >= 18, got ${all.size}", all.size >= 18)
+        assertEquals("Curated preset names must be distinct", all.size, all.map { it.name }.distinct().size)
+        assertEquals("Curated preset IDs must be distinct", all.size, all.map { it.id }.distinct().size)
 
-        val suites = listOf(
-            com.example.model.EffectSuite.ALIGHT_MOTION,
-            com.example.model.EffectSuite.GOLD_MOTION,
-            com.example.model.EffectSuite.ULTRA_MOTION,
-            com.example.model.EffectSuite.NODE_VIDEO,
-            com.example.model.EffectSuite.CAPCUT
+        val rgbMatches = com.example.data.EffectCatalog.filterPresets(
+            category = "Glitch & RGB",
+            query = "Chromatic"
         )
-        suites.forEach { suite ->
-            assertTrue("Suite ${suite.displayName} should have > 300 effects", com.example.data.EffectCatalog.countForSuite(suite) > 300)
-        }
-
-        val tilesMatches = com.example.data.EffectCatalog.filterPresets(
-            suite = com.example.model.EffectSuite.ALIGHT_MOTION,
-            category = "Distortion",
-            query = "Tiles"
-        )
-        assertTrue(tilesMatches.isNotEmpty())
+        assertTrue(rgbMatches.isNotEmpty())
 
         val vm = com.example.ui.EditorViewModel(repository = ProjectRepository(seedSampleProjects = true))
         val firstClip = vm.currentProject.value.tracks.first().clips.first()
         vm.selectClip(firstClip.id)
         val initialFxCount = firstClip.effects.size
 
-        vm.addEffectPreset(tilesMatches.first())
+        vm.addEffectPreset(rgbMatches.first())
         val updatedClip = vm.currentProject.value.findClip(firstClip.id)!!
         assertEquals(initialFxCount + 1, updatedClip.effects.size)
-        assertEquals(tilesMatches.first().name, updatedClip.effects.last().effectiveName)
+        assertEquals(rgbMatches.first().name, updatedClip.effects.last().effectiveName)
     }
 
     @Test
@@ -894,6 +892,263 @@ class MotionCutTest {
 
         assertEquals("My_Summer_Vlog_2026", com.example.engine.VideoExporter.sanitizeFileName("  My Summer Vlog! (2026) "))
         assertEquals("MotionCut_Export", com.example.engine.VideoExporter.sanitizeFileName("   ///   "))
+    }
+
+    @Test
+    fun testKeyframeDeletionByIdAndAtPlayhead() {
+        val repo = ProjectRepository()
+        val vm = com.example.ui.EditorViewModel(repository = repo)
+        val clip = com.example.model.ClipItem(
+            id = "kf_del_clip",
+            trackId = "",
+            title = "Logo PNG",
+            type = com.example.model.ClipType.VIDEO_SAMPLE,
+            startTimeMs = 0L,
+            durationMs = 4000L
+        )
+        vm.addClip(clip)
+        vm.setActiveProperty(AnimatableProperty.POSITION_X)
+
+        vm.seek(0L)
+        vm.toggleKeyframeOnSelectedClip()
+        vm.seek(1000L)
+        vm.updatePropertyValue(AnimatableProperty.POSITION_X, 120f)
+        vm.seek(2500L)
+        vm.updatePropertyValue(AnimatableProperty.POSITION_X, 240f)
+
+        val beforeDel = vm.currentProject.value.findClip("kf_del_clip")!!
+        val kfs = beforeDel.keyframeTracks[AnimatableProperty.POSITION_X]?.keyframes.orEmpty()
+        assertEquals(3, kfs.size)
+
+        // Delete middle keyframe explicitly by ID (bugfix verification)
+        vm.deleteKeyframe(AnimatableProperty.POSITION_X, kfs[1].id)
+        val afterMidDel = vm.currentProject.value.findClip("kf_del_clip")!!
+        assertEquals(2, afterMidDel.keyframeTracks[AnimatableProperty.POSITION_X]?.keyframes?.size)
+
+        // Delete remaining keyframe at time within 160ms tolerance
+        vm.seek(2420L)
+        vm.deleteKeyframeAtPlayhead(AnimatableProperty.POSITION_X)
+        val afterPlayheadDel = vm.currentProject.value.findClip("kf_del_clip")!!
+        assertEquals(1, afterPlayheadDel.keyframeTracks[AnimatableProperty.POSITION_X]?.keyframes?.size)
+
+        // Undo restores keyframe
+        vm.undo()
+        val afterUndo = vm.currentProject.value.findClip("kf_del_clip")!!
+        assertEquals(2, afterUndo.keyframeTracks[AnimatableProperty.POSITION_X]?.keyframes?.size)
+
+        // Clear track removes property keyframe track completely
+        vm.clearKeyframesForProperty(AnimatableProperty.POSITION_X)
+        assertFalse(vm.currentProject.value.findClip("kf_del_clip")!!.keyframeTracks.containsKey(AnimatableProperty.POSITION_X))
+    }
+
+    @Test
+    fun testMultiPointBreakpointEasingEvaluation() {
+        val easing = EasingType.MultiPoint(
+            points = listOf(
+                com.example.model.CurveBreakpoint(0.25f, 0.85f),
+                com.example.model.CurveBreakpoint(0.75f, 0.15f)
+            )
+        )
+        assertEquals(0.0f, KeyframeEvaluator.evaluateEasing(0f, easing), 0.001f)
+        assertEquals(1.0f, KeyframeEvaluator.evaluateEasing(1f, easing), 0.001f)
+        assertEquals(0.85f, KeyframeEvaluator.evaluateEasing(0.25f, easing), 0.01f)
+        assertEquals(0.15f, KeyframeEvaluator.evaluateEasing(0.75f, easing), 0.01f)
+        assertEquals(0.50f, KeyframeEvaluator.evaluateEasing(0.50f, easing), 0.02f)
+    }
+
+    @Test
+    fun testClipSpeedPitchAndReverseIncludingAudio() {
+        val repo = ProjectRepository()
+        val vm = com.example.ui.EditorViewModel(repository = repo)
+        val audioClip = com.example.model.ClipItem(
+            id = "audio_speed_clip",
+            trackId = "",
+            title = "Beat_120BPM.wav",
+            type = com.example.model.ClipType.AUDIO,
+            startTimeMs = 1000L,
+            durationMs = 4000L,
+            speed = 1.0f,
+            preserveAudioPitch = true,
+            isReversed = false
+        )
+        vm.addClip(audioClip)
+        vm.selectClip("audio_speed_clip")
+
+        vm.updateClipSpeed(
+            speed = 2.0f,
+            preserveAudioPitch = false,
+            isReversed = true,
+            adjustDuration = true
+        )
+
+        val updated = vm.currentProject.value.findClip("audio_speed_clip")!!
+        assertEquals(2.0f, updated.speed, 0.01f)
+        assertFalse(updated.preserveAudioPitch)
+        assertTrue(updated.isReversed)
+        assertEquals(2000L, updated.durationMs)
+
+        // Source time mapping in reverse at 2x speed (local t=0 -> end=4000ms; local t=1000ms -> 2000ms)
+        assertEquals(4000L, KeyframeEvaluator.mapTimelineToSourceTimeMs(updated, 1000L))
+        assertEquals(2000L, KeyframeEvaluator.mapTimelineToSourceTimeMs(updated, 2000L))
+    }
+
+    @Test
+    fun testTextTemplatesFontsAnimationsAndEvaluation() {
+        val templates = com.example.ui.components.TextStyleRegistry.templates
+        assertTrue(templates.size >= 8)
+        com.example.model.TextFontChoice.entries.forEach { choice ->
+            val fam = com.example.ui.components.TextStyleRegistry.composeFontFamily(choice)
+            assertNotNull(fam)
+        }
+
+        val typewriterCfg = com.example.model.TextConfig(
+            text = "HELLO WORLD",
+            fontChoice = com.example.model.TextFontChoice.BEBAS_NEUE,
+            animationType = com.example.model.TextAnimationType.TYPEWRITER,
+            animationSpeed = 1.0f
+        )
+        val startFrame = com.example.ui.components.TextStyleRegistry.evaluateAnimatedText(typewriterCfg, 50L, 2000L)
+        val endFrame = com.example.ui.components.TextStyleRegistry.evaluateAnimatedText(typewriterCfg, 1900L, 2000L)
+        assertTrue(startFrame.visibleText.length < endFrame.visibleText.length)
+        assertEquals("HELLO WORLD", endFrame.visibleText)
+    }
+
+    @Test
+    fun testLibrary3DModelsTextureMixAndProjectJsonRoundtrip() {
+        // 1. All library 3D models produce valid triangulated meshes
+        com.example.model.Library3DModel.entries.forEach { model ->
+            val mesh = com.example.engine.Mesh3DParser.buildLibraryMesh(model, 0.4f)
+            assertTrue("${model.displayName} vertices empty", mesh.vertices.isNotEmpty())
+            assertTrue("${model.displayName} faces empty", mesh.faces.isNotEmpty())
+        }
+
+        // 2. ProjectJsonCodec full lossless roundtrip for all new features
+        val customClip = com.example.model.ClipItem(
+            id = "clip_full_json",
+            trackId = "t_main",
+            title = "3D Rocket Textured",
+            type = com.example.model.ClipType.MODEL_3D,
+            startTimeMs = 500L,
+            durationMs = 3000L,
+            speed = 1.5f,
+            preserveAudioPitch = false,
+            isReversed = true,
+            model3dConfig = com.example.model.Model3DConfig(
+                source = com.example.model.Model3DSource.LIBRARY_MODEL,
+                libraryModel = com.example.model.Library3DModel.ROCKET,
+                imageUri = "content://media/external/images/media/77",
+                textureMix = 0.72f
+            ),
+            textConfig = com.example.model.TextConfig(
+                text = "CYBER TITLE",
+                fontChoice = com.example.model.TextFontChoice.CINZEL,
+                animationType = com.example.model.TextAnimationType.GLITCH_FLICKER,
+                hasBackgroundPill = true
+            ),
+            keyframeTracks = mapOf(
+                AnimatableProperty.SCALE to KeyframeTrack(
+                    property = AnimatableProperty.SCALE,
+                    keyframes = listOf(
+                        Keyframe(
+                            timeMs = 0L,
+                            value = 1f,
+                            easing = EasingType.MultiPoint(
+                                listOf(com.example.model.CurveBreakpoint(0.4f, 0.9f))
+                            )
+                        ),
+                        Keyframe(timeMs = 1500L, value = 2f)
+                    )
+                )
+            ),
+            cameraTrackPoints = listOf(
+                com.example.model.CameraTrackPoint(timeMs = 0L, x = 0f, y = 0f, scale = 1f, confidence = 1f),
+                com.example.model.CameraTrackPoint(timeMs = 1000L, x = 24f, y = -12f, scale = 1.05f, confidence = 0.92f)
+            )
+        )
+        val project = com.example.model.Project(
+            id = "proj_roundtrip",
+            title = "Roundtrip Test",
+            tracks = listOf(
+                com.example.model.Track(
+                    id = "t_main",
+                    name = "Main",
+                    type = com.example.model.TrackType.MAIN_VIDEO,
+                    clips = listOf(customClip)
+                )
+            )
+        )
+
+        val json = com.example.data.local.ProjectJsonCodec.encode(project)
+        val decoded = com.example.data.local.ProjectJsonCodec.decode(json)
+        assertNotNull(decoded)
+        val dc = decoded!!.findClip("clip_full_json")!!
+        assertEquals(1.5f, dc.speed, 0.01f)
+        assertFalse(dc.preserveAudioPitch)
+        assertTrue(dc.isReversed)
+        assertEquals(com.example.model.Model3DSource.LIBRARY_MODEL, dc.model3dConfig?.source)
+        assertEquals(com.example.model.Library3DModel.ROCKET, dc.model3dConfig?.libraryModel)
+        assertEquals("content://media/external/images/media/77", dc.model3dConfig?.imageUri)
+        assertEquals(0.72f, dc.model3dConfig?.textureMix ?: 0f, 0.01f)
+        assertEquals(com.example.model.TextFontChoice.CINZEL, dc.textConfig?.fontChoice)
+        assertEquals(com.example.model.TextAnimationType.GLITCH_FLICKER, dc.textConfig?.animationType)
+        assertTrue(dc.textConfig?.hasBackgroundPill == true)
+        val easing = dc.keyframeTracks[AnimatableProperty.SCALE]?.keyframes?.first()?.easing
+        assertTrue(easing is EasingType.MultiPoint)
+        assertEquals(0.4f, (easing as EasingType.MultiPoint).points.first().x, 0.01f)
+        assertEquals(2, dc.cameraTrackPoints.size)
+        assertEquals(24f, dc.cameraTrackPoints[1].x, 0.01f)
+    }
+
+    @Test
+    fun testOpticalCameraTrackingAndApplyKeyframes() {
+        val w = 96
+        val h = 96
+        fun makeFrame(featureX: Int, featureY: Int): IntArray {
+            val grid = IntArray(w * h) { 20 }
+            for (y in (featureY - 4)..(featureY + 4)) {
+                for (x in (featureX - 4)..(featureX + 4)) {
+                    if (x in 0 until w && y in 0 until h) {
+                        grid[y * w + x] = 240
+                    }
+                }
+            }
+            return grid
+        }
+        val frames = listOf(
+            0L to makeFrame(48, 48),
+            500L to makeFrame(52, 49),
+            1000L to makeFrame(56, 50)
+        )
+        val points = com.example.engine.CameraTracker.computeOpticalTrackPoints(
+            lumaFrames = frames,
+            gridW = w,
+            gridH = h,
+            roiNormX = 0.5f,
+            roiNormY = 0.5f
+        )
+        assertEquals(3, points.size)
+        assertEquals(0f, points[0].x, 0.01f)
+        assertTrue("Expected positive X motion displacement, got ${points[2].x}", points[2].x > 5f)
+
+        val repo = ProjectRepository()
+        val srcClip = com.example.model.ClipItem(id = "src_vid", trackId = "", title = "Vid", startTimeMs = 0L, durationMs = 2000L)
+        val tgtClip = com.example.model.ClipItem(id = "tgt_txt", trackId = "", title = "Tag", type = com.example.model.ClipType.TEXT, startTimeMs = 0L, durationMs = 2000L)
+        repo.addClipToTrack("", srcClip)
+        repo.addClipToTrack("", tgtClip)
+
+        repo.applyCameraTracking(
+            sourceClipId = "src_vid",
+            targetClipId = "tgt_txt",
+            points = points,
+            applyTranslation = true,
+            applyScale = false,
+            stabilizeMode = false
+        )
+        val tracked = repo.currentProject.value.findClip("tgt_txt")!!
+        assertEquals(3, tracked.cameraTrackPoints.size)
+        val xKfs = tracked.keyframeTracks[AnimatableProperty.POSITION_X]?.keyframes.orEmpty()
+        assertEquals(3, xKfs.size)
+        assertTrue(xKfs.last().value > 5f)
     }
 }
 

@@ -3,6 +3,7 @@ package com.example.data
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -209,48 +210,6 @@ object DeviceMediaScanner {
                 }
             }
 
-            // 6. Built-in 4K studio sample clips
-            items.addAll(
-                listOf(
-                    DeviceMediaItem(
-                        id = "sample_cyberpunk",
-                        title = "Cyberpunk City 4K",
-                        uriString = null,
-                        isVideo = true,
-                        durationMs = 6000L,
-                        mimeType = "video/mp4",
-                        sampleResId = R.drawable.cyberpunk_city,
-                        colorHex = 0xFF8800CC,
-                        isDeviceFile = false,
-                        folderName = "Studio"
-                    ),
-                    DeviceMediaItem(
-                        id = "sample_drone",
-                        title = "Drone Coastline",
-                        uriString = null,
-                        isVideo = true,
-                        durationMs = 6000L,
-                        mimeType = "video/mp4",
-                        sampleResId = R.drawable.drone_coastline,
-                        colorHex = 0xFF007799,
-                        isDeviceFile = false,
-                        folderName = "Studio"
-                    ),
-                    DeviceMediaItem(
-                        id = "sample_skater",
-                        title = "Golden Hour Skater",
-                        uriString = null,
-                        isVideo = true,
-                        durationMs = 6000L,
-                        mimeType = "video/mp4",
-                        sampleResId = R.drawable.sunset_skater,
-                        colorHex = 0xFFCC7700,
-                        isDeviceFile = false,
-                        folderName = "Studio"
-                    )
-                )
-            )
-
             items
         }
 
@@ -415,13 +374,56 @@ object DeviceMediaScanner {
         prefs.edit().putStringSet(KEY_TREE_URIS, existing).apply()
     }
 
+    fun isVideoUri(context: Context, uriString: String, isVideoHint: Boolean = true): Boolean {
+        val lower = uriString.lowercase(Locale.US)
+        val ext = lower.substringBefore('?').substringAfterLast('.', "")
+        if (ext in IMAGE_EXTENSIONS) return false
+        if (ext in VIDEO_EXTENSIONS) return true
+        val mime = runCatching { context.contentResolver.getType(Uri.parse(uriString)) }.getOrNull().orEmpty()
+        if (mime.startsWith("image/")) return false
+        if (mime.startsWith("video/")) return true
+        return isVideoHint
+    }
+
+    fun transparentBitmapOptions(sampleSize: Int = 1): BitmapFactory.Options {
+        return BitmapFactory.Options().apply {
+            inSampleSize = sampleSize.coerceAtLeast(1)
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inPremultiplied = true
+        }
+    }
+
+    private fun decodeAndroidBitmapFromUri(context: Context, uri: Uri, sampleSize: Int): Bitmap? {
+        val opts = transparentBitmapOptions(sampleSize)
+        val decoded = if (uri.scheme == "file" && uri.path != null) {
+            BitmapFactory.decodeFile(uri.path, opts)
+        } else {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, opts)
+            }
+        } ?: return null
+
+        return if (decoded.config != Bitmap.Config.ARGB_8888) {
+            decoded.copy(Bitmap.Config.ARGB_8888, false)?.also {
+                decoded.recycle()
+            } ?: decoded
+        } else {
+            decoded
+        }
+    }
+
     suspend fun loadThumbnailBitmap(context: Context, uriString: String, isVideo: Boolean): ImageBitmap? =
         withContext(Dispatchers.IO) {
             runCatching {
                 val uri = Uri.parse(uriString)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri.scheme == "content") {
+                val actuallyVideo = isVideoUri(context, uriString, isVideo)
+                if (!actuallyVideo) {
+                    // Decode images directly in ARGB_8888 so PNG/WebP transparency is preserved
+                    // (MediaStore/ContentResolver.loadThumbnail composites opaque black over alpha).
+                    decodeAndroidBitmapFromUri(context, uri, sampleSize = 2)?.asImageBitmap()
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri.scheme == "content") {
                     context.contentResolver.loadThumbnail(uri, Size(360, 260), null).asImageBitmap()
-                } else if (isVideo) {
+                } else {
                     val retriever = MediaMetadataRetriever()
                     try {
                         if (uri.scheme == "file" && uri.path != null) {
@@ -433,17 +435,49 @@ object DeviceMediaScanner {
                     } finally {
                         retriever.release()
                     }
-                } else if (uri.scheme == "file" && uri.path != null) {
-                    val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-                    BitmapFactory.decodeFile(uri.path, opts)?.asImageBitmap()
+                }
+            }.getOrNull()
+        }
+
+    suspend fun loadFullBitmap(context: Context, uriString: String, isVideoHint: Boolean = false): Bitmap? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val uri = Uri.parse(uriString)
+                val actuallyVideo = isVideoUri(context, uriString, isVideoHint)
+                if (!actuallyVideo) {
+                    decodeAndroidBitmapFromUri(context, uri, sampleSize = 1)?.let { bmp ->
+                        val maxDim = maxOf(bmp.width, bmp.height)
+                        if (maxDim > 1920) {
+                            val scale = 1920f / maxDim.toFloat()
+                            val scaled = Bitmap.createScaledBitmap(
+                                bmp,
+                                (bmp.width * scale).toInt().coerceAtLeast(1),
+                                (bmp.height * scale).toInt().coerceAtLeast(1),
+                                true
+                            )
+                            if (scaled !== bmp) bmp.recycle()
+                            scaled
+                        } else bmp
+                    }
                 } else {
-                    context.contentResolver.openInputStream(uri)?.use { stream ->
-                        val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-                        BitmapFactory.decodeStream(stream, null, opts)?.asImageBitmap()
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        if (uri.scheme == "file" && uri.path != null) {
+                            retriever.setDataSource(uri.path)
+                        } else {
+                            retriever.setDataSource(context, uri)
+                        }
+                        retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    } finally {
+                        retriever.release()
                     }
                 }
             }.getOrNull()
         }
+
+    suspend fun loadFullImageBitmap(context: Context, uriString: String, isVideoHint: Boolean = false): ImageBitmap? {
+        return loadFullBitmap(context, uriString, isVideoHint)?.asImageBitmap()
+    }
 
     fun formatShortDuration(durationMs: Long): String {
         val totalSec = (durationMs / 1000L).coerceAtLeast(1L)

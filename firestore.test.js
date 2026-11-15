@@ -221,12 +221,13 @@ test("Authenticated owner: can create, list, rename, update, and delete CloudPro
     })
   );
 
-  // Full metadata sync update
+  // Full metadata + serialized timeline sync update
   await assertSucceeds(
     projRef.update({
       durationMs: 18500,
       clipCount: 6,
       trackCount: 3,
+      projectJson: "{\"id\":\"proj_cyber_01\",\"tracks\":[]}",
       updatedAt: new Date(Date.now() - 500),
     })
   );

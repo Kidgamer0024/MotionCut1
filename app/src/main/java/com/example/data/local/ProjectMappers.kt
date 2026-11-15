@@ -18,7 +18,7 @@ object ProjectMappers {
     fun toEntity(project: Project): ProjectEntity {
         val firstVisualClip = project.tracks.flatMap { it.clips }.firstOrNull { it.assetResId != null }
         val thumbResId = firstVisualClip?.assetResId
-        val thumbColor = project.tracks.flatMap { it.clips }.firstOrNull { it.colorHex != null }?.colorHex ?: 0xFF141424
+        val thumbColor = project.tracks.flatMap { it.clips }.firstOrNull()?.colorHex ?: 0xFF141424
         val totalClips = project.tracks.sumOf { it.clips.size }
 
         return ProjectEntity(
@@ -33,13 +33,21 @@ object ProjectMappers {
             thumbnailColorHex = thumbColor,
             clipCount = totalClips.coerceAtLeast(1),
             trackCount = project.tracks.size.coerceAtLeast(1),
-            projectJson = "",
+            projectJson = ProjectJsonCodec.encode(project),
             createdAt = project.createdAt,
             updatedAt = project.updatedAt
         )
     }
 
     fun toProject(entity: ProjectEntity, fallbackProject: Project? = null): Project {
+        val decoded = ProjectJsonCodec.decode(entity.projectJson)
+        if (decoded != null && (fallbackProject == null || entity.updatedAt > fallbackProject.updatedAt)) {
+            return decoded.copy(
+                id = entity.id,
+                title = entity.title,
+                updatedAt = entity.updatedAt
+            )
+        }
         if (fallbackProject != null) {
             return fallbackProject.copy(
                 id = entity.id,

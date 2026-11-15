@@ -205,6 +205,9 @@ fun onGoogleSignInClicked(
         } catch (e: GetCredentialCancellationException) {
             Log.w("Auth", "Google Sign-In flow cancelled or dismissed: ${e.message}", e)
             onAuthCancelled()
+        } catch (e: androidx.credentials.exceptions.NoCredentialException) {
+            Log.w("Auth", "No Google credentials found on device: ${e.message}", e)
+            onAuthError("No Google account is signed in on this device. Add a Google account in device Settings, or tap \"Continue without signing in\".")
         } catch (e: Exception) {
             Log.e("Auth", "Google Sign-In failed", e)
             onAuthError(e.localizedMessage ?: "Google Sign-In failed")
@@ -451,6 +454,7 @@ fun AuthScreen(
                                 scope = coroutineScope,
                                 onAuthCancelled = {
                                     isSigningIn = false
+                                    errorMessage = "Google Sign-In was dismissed. Tap \"Sign in with Google\" again or choose \"Continue without signing in\"."
                                 }
                             )
                         },

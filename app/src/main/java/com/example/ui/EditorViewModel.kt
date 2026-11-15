@@ -1,5 +1,6 @@
 package com.example.ui
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,6 +9,7 @@ import com.example.data.local.ProjectEntity
 import com.example.data.remote.FirestoreProjectRepository
 import com.example.engine.AiVideoToolsManager
 import com.example.engine.AudioSynthesizerEngine
+import com.example.engine.CameraTracker
 import com.example.engine.KeyframeEvaluator
 import com.example.engine.PlaybackEngine
 import com.example.engine.RecordedVoiceOver
@@ -29,18 +31,24 @@ import com.example.model.Model3DConfig
 import com.example.model.MusicTrack
 import com.example.model.Project
 import com.example.model.ReviewItem
+import com.example.model.TextConfig
 import com.example.model.Track
 import com.example.model.TrackType
 import com.example.model.VideoEffect
 import com.example.ui.components.ScopeMode
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -51,6 +59,9 @@ import java.util.UUID
 enum class EditorToolTab(val label: String) {
     TIMELINE("Timeline"),
     KEYFRAMES("Keyframe Graph"),
+    TEXT("Text Studio"),
+    SPEED("Speed"),
+    CAMERA_TRACK("Tracker"),
     COLOR_GRADING("Color Grading"),
     EFFECTS("FX Stack"),
     MASKING("Masking"),
@@ -95,32 +106,37 @@ class EditorViewModel(
         )
 
     private val _initialSeedFinished = MutableStateFlow(false)
+    private val _cloudSyncRetryTrigger = MutableStateFlow(0)
 
-    // Real-time Firestore listener with two-tier Flow error handling
+    // Real-time Firestore listener with two-tier Flow error handling and manual retry trigger
+    @OptIn(ExperimentalCoroutinesApi::class)
     val cloudSyncState: StateFlow<CloudSyncState> = if (firestoreRepository != null && currentUserId != null) {
-        firestoreRepository.observeCloudProjects(currentUserId)
-            .onEach { cloudProjects ->
-                val userCreatedProjects = cloudProjects.filterNot {
-                    it.id in com.example.data.SampleProjects.SEEDED_SAMPLE_IDS
-                }
-                if (userCreatedProjects.isNotEmpty() || _initialSeedFinished.value) {
-                    repository.syncFromCloud(userCreatedProjects.map { it.toRoomEntity() })
-                }
-            }
-            .map<List<CloudProject>, CloudSyncState> { cloudProjects ->
-                val userCount = cloudProjects.count {
-                    it.id !in com.example.data.SampleProjects.SEEDED_SAMPLE_IDS
-                }
-                CloudSyncState.Synced(count = userCount)
-            }
-            .catch { error ->
-                val firestoreError = generateSequence(error) { it.cause }
-                    .filterIsInstance<FirebaseFirestoreException>()
-                    .firstOrNull()
-                if (firestoreError == null && error is CancellationException) throw error
-                val rootError = firestoreError ?: error
-                Log.w(TAG, "Error observing cloud projects", rootError)
-                emit(CloudSyncState.Error(rootError.localizedMessage ?: "Failed to sync cloud projects"))
+        _cloudSyncRetryTrigger
+            .flatMapLatest {
+                firestoreRepository.observeCloudProjects(currentUserId)
+                    .onEach { cloudProjects ->
+                        val userCreatedProjects = cloudProjects.filterNot {
+                            it.id in com.example.data.SampleProjects.SEEDED_SAMPLE_IDS
+                        }
+                        if (userCreatedProjects.isNotEmpty() || _initialSeedFinished.value) {
+                            repository.syncFromCloud(userCreatedProjects.map { it.toRoomEntity() })
+                        }
+                    }
+                    .map<List<CloudProject>, CloudSyncState> { cloudProjects ->
+                        val userCount = cloudProjects.count {
+                            it.id !in com.example.data.SampleProjects.SEEDED_SAMPLE_IDS
+                        }
+                        CloudSyncState.Synced(count = userCount)
+                    }
+                    .catch { error ->
+                        val firestoreError = generateSequence(error) { it.cause }
+                            .filterIsInstance<FirebaseFirestoreException>()
+                            .firstOrNull()
+                        if (firestoreError == null && error is CancellationException) throw error
+                        val rootError = firestoreError ?: error
+                        Log.w(TAG, "Error observing cloud projects", rootError)
+                        emit(CloudSyncState.Error(rootError.localizedMessage ?: "Failed to sync cloud projects"))
+                    }
             }
             .stateIn(
                 scope = viewModelScope,
@@ -241,6 +257,12 @@ class EditorViewModel(
     private val _undoToastMessage = MutableStateFlow<String?>(null)
     val undoToastMessage: StateFlow<String?> = _undoToastMessage.asStateFlow()
 
+    private val _isCameraTracking = MutableStateFlow(false)
+    val isCameraTracking: StateFlow<Boolean> = _isCameraTracking.asStateFlow()
+
+    private val _cameraTrackingStatus = MutableStateFlow<String?>(null)
+    val cameraTrackingStatus: StateFlow<String?> = _cameraTrackingStatus.asStateFlow()
+
     init {
         playbackEngine.setDuration(currentProject.value.durationMs)
         if (firestoreRepository != null && currentUserId != null) {
@@ -254,6 +276,22 @@ class EditorViewModel(
                 }
                 _initialSeedFinished.value = true
             }
+            @OptIn(FlowPreview::class)
+            viewModelScope.launch {
+                var lastSyncedKey = ""
+                repository.currentProject
+                    .drop(1)
+                    .debounce(700L)
+                    .collect { proj ->
+                        if (proj.id != "__empty_draft__") {
+                            val key = "${proj.id}:${proj.updatedAt}"
+                            if (key != lastSyncedKey) {
+                                lastSyncedKey = key
+                                firestoreRepository.upsertCloudProject(proj)
+                            }
+                        }
+                    }
+            }
         } else {
             _initialSeedFinished.value = true
         }
@@ -262,8 +300,24 @@ class EditorViewModel(
     private fun syncCurrentProjectToCloud() {
         val repo = firestoreRepository ?: return
         val proj = currentProject.value
+        if (proj.id == "__empty_draft__") return
         viewModelScope.launch {
             repo.upsertCloudProject(proj)
+        }
+    }
+
+    fun retryCloudSync() {
+        val repo = firestoreRepository ?: return
+        viewModelScope.launch {
+            repo.ensureUserProfile(
+                displayName = currentUserDisplayName ?: "MotionCut Creator",
+                photoUrl = currentUserPhotoUrl
+            )
+            val cur = currentProject.value
+            if (cur.id != "__empty_draft__") {
+                repo.upsertCloudProject(cur)
+            }
+            _cloudSyncRetryTrigger.value += 1
         }
     }
 
@@ -482,11 +536,26 @@ class EditorViewModel(
     fun clearKeyframesForProperty(property: AnimatableProperty) {
         val clipId = resolveTargetClipId() ?: return
         repository.clearKeyframesForProperty(clipId, property)
+        _undoToastMessage.value = "Cleared ${property.displayName} keyframes"
+        syncCurrentProjectToCloud()
+    }
+
+    fun deleteKeyframe(property: AnimatableProperty, keyframeId: String) {
+        val clipId = resolveTargetClipId() ?: return
+        repository.deleteKeyframe(clipId, property, keyframeId)
+        _undoToastMessage.value = "Removed ${property.displayName} keyframe"
+        syncCurrentProjectToCloud()
+    }
+
+    fun deleteKeyframeAtPlayhead(property: AnimatableProperty) {
+        val clipId = resolveTargetClipId() ?: return
+        repository.deleteKeyframeAtTime(clipId, property, playbackEngine.currentTimeMs.value)
+        _undoToastMessage.value = "Removed ${property.displayName} keyframe"
         syncCurrentProjectToCloud()
     }
 
     fun updateKeyframeEasing(property: AnimatableProperty, keyframeId: String, easing: EasingType) {
-        val clipId = _selectedClipId.value ?: return
+        val clipId = resolveTargetClipId() ?: return
         repository.updateKeyframeEasing(clipId, property, keyframeId, easing)
         syncCurrentProjectToCloud()
     }
@@ -594,14 +663,90 @@ class EditorViewModel(
         }
     }
 
+    fun updateClipTextConfig(textConfig: TextConfig) {
+        val clipId = _selectedClipId.value ?: return
+        repository.updateClipTextConfig(clipId, textConfig)
+        syncCurrentProjectToCloud()
+    }
+
+    fun updateClipSpeed(
+        speed: Float,
+        preserveAudioPitch: Boolean,
+        isReversed: Boolean,
+        adjustDuration: Boolean = true
+    ) {
+        val clipId = resolveTargetClipId() ?: return
+        _selectedClipId.value = clipId
+        repository.updateClipSpeed(clipId, speed, preserveAudioPitch, isReversed, adjustDuration)
+        playbackEngine.setDuration(currentProject.value.durationMs)
+        _undoToastMessage.value = if (isReversed) {
+            "Speed ${String.format(java.util.Locale.US, "%.2fx", speed)} • Reversed"
+        } else {
+            "Clip speed set to ${String.format(java.util.Locale.US, "%.2fx", speed)}"
+        }
+        syncCurrentProjectToCloud()
+    }
+
+    fun runCameraTracking(
+        context: Context,
+        sourceClipId: String,
+        targetClipId: String,
+        roiNormX: Float,
+        roiNormY: Float,
+        applyTranslation: Boolean,
+        applyScale: Boolean,
+        stabilizeMode: Boolean
+    ) {
+        val sourceClip = currentProject.value.findClip(sourceClipId) ?: return
+        viewModelScope.launch {
+            _isCameraTracking.value = true
+            _cameraTrackingStatus.value = "Tracking motion patches across video frames..."
+            try {
+                val result = CameraTracker.trackClipMotion(
+                    context = context,
+                    clip = sourceClip,
+                    roiNormX = roiNormX,
+                    roiNormY = roiNormY
+                )
+                if (result.points.size >= 2) {
+                    repository.applyCameraTracking(
+                        sourceClipId = sourceClipId,
+                        targetClipId = targetClipId,
+                        points = result.points,
+                        applyTranslation = applyTranslation,
+                        applyScale = applyScale,
+                        stabilizeMode = stabilizeMode
+                    )
+                    _cameraTrackingStatus.value = result.summary
+                    _undoToastMessage.value = if (stabilizeMode) {
+                        "Stabilized ${result.points.size} frames"
+                    } else {
+                        "Applied ${result.points.size} camera track points"
+                    }
+                    syncCurrentProjectToCloud()
+                } else {
+                    _cameraTrackingStatus.value = result.summary
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _cameraTrackingStatus.value = "Tracking failed: ${e.localizedMessage ?: "Unknown error"}"
+            } finally {
+                _isCameraTracking.value = false
+            }
+        }
+    }
+
     fun addClip(clip: ClipItem) {
         val targetTrackId = clip.trackId
         repository.addClipToTrack(targetTrackId, clip)
         if (clip.type != com.example.model.ClipType.AUDIO) {
             _selectedClipId.value = clip.id
         }
-        if (clip.type == com.example.model.ClipType.MODEL_3D) {
-            _activeToolTab.value = EditorToolTab.MODEL_3D
+        when (clip.type) {
+            com.example.model.ClipType.MODEL_3D -> _activeToolTab.value = EditorToolTab.MODEL_3D
+            com.example.model.ClipType.TEXT -> _activeToolTab.value = EditorToolTab.TEXT
+            else -> Unit
         }
         syncCurrentProjectToCloud()
     }

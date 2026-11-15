@@ -2,6 +2,7 @@ package com.example.engine
 
 import com.example.model.AnimatableProperty
 import com.example.model.ClipItem
+import com.example.model.CurveBreakpoint
 import com.example.model.EasingType
 import com.example.model.Keyframe
 import com.example.model.KeyframeTrack
@@ -50,8 +51,43 @@ object KeyframeEvaluator {
                 else 1f - (-2f * t + 2f).pow(3) / 2f
             }
             is EasingType.CubicBezier -> solveCubicBezier(t, easing.p1x, easing.p1y, easing.p2x, easing.p2y)
+            is EasingType.MultiPoint -> evaluateMultiPoint(t, easing.points)
             is EasingType.Bounce -> evaluateBounce(t)
             is EasingType.Elastic -> evaluateElastic(t)
+        }
+    }
+
+    fun evaluateMultiPoint(t: Float, breakpoints: List<CurveBreakpoint>): Float {
+        val clampedT = t.coerceIn(0f, 1f)
+        if (clampedT <= 0f) return 0f
+        if (clampedT >= 1f) return 1f
+        val interior = breakpoints
+            .map { CurveBreakpoint(it.x.coerceIn(0.01f, 0.99f), it.y.coerceIn(-0.4f, 1.4f)) }
+            .sortedBy { it.x }
+        val anchors = listOf(CurveBreakpoint(0f, 0f)) + interior + listOf(CurveBreakpoint(1f, 1f))
+        for (i in 0 until anchors.size - 1) {
+            val a = anchors[i]
+            val b = anchors[i + 1]
+            if (clampedT <= b.x || i == anchors.size - 2) {
+                val span = (b.x - a.x).coerceAtLeast(1e-4f)
+                val localT = ((clampedT - a.x) / span).coerceIn(0f, 1f)
+                // Smooth Hermite blend inside segment so curve passes through every breakpoint seamlessly
+                val smooth = localT * localT * (3f - 2f * localT)
+                return a.y + (b.y - a.y) * smooth
+            }
+        }
+        return clampedT
+    }
+
+    fun mapTimelineToSourceTimeMs(clip: ClipItem, globalTimeMs: Long): Long {
+        val localMs = (globalTimeMs - clip.startTimeMs).coerceIn(0L, clip.durationMs)
+        val safeSpeed = clip.speed.coerceIn(0.1f, 8.0f)
+        val totalSourceSpan = (clip.durationMs * safeSpeed).toLong().coerceAtLeast(1L)
+        val scaledMs = (localMs * safeSpeed).toLong().coerceIn(0L, totalSourceSpan)
+        return if (clip.isReversed) {
+            (totalSourceSpan - scaledMs).coerceIn(0L, totalSourceSpan)
+        } else {
+            scaledMs
         }
     }
 

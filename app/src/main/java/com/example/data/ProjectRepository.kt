@@ -139,11 +139,15 @@ class ProjectRepository(
         val cur = _currentProject.value
         val matchingCur = updatedProjects.find { it.id == cur.id }
         if (matchingCur != null) {
-            if (matchingCur.title != cur.title || matchingCur.updatedAt != cur.updatedAt) {
-                _currentProject.value = cur.copy(
-                    title = matchingCur.title,
-                    updatedAt = matchingCur.updatedAt
-                )
+            if (matchingCur.updatedAt > cur.updatedAt ||
+                matchingCur.tracks != cur.tracks ||
+                matchingCur.title != cur.title
+            ) {
+                _currentProject.value = if (matchingCur.tracks.isNotEmpty() || cur.tracks.isEmpty()) {
+                    matchingCur
+                } else {
+                    cur.copy(title = matchingCur.title, updatedAt = matchingCur.updatedAt)
+                }
             }
         } else if (updatedProjects.isNotEmpty()) {
             actionStack.clear()
@@ -536,7 +540,7 @@ class ProjectRepository(
         updateClip(clipId, "Toggle ${property.displayName} Keyframe") { clip ->
             val relTime = (playheadTimeMs - clip.startTimeMs).coerceIn(0L, clip.durationMs)
             val track = clip.keyframeTracks[property] ?: KeyframeTrack(property = property)
-            val existing = track.getKeyframeAt(relTime, toleranceMs = 80L)
+            val existing = track.getKeyframeAt(relTime, toleranceMs = 160L)
 
             val newKeyframes = if (existing != null) {
                 track.keyframes.filter { it.id != existing.id }
@@ -554,6 +558,36 @@ class ProjectRepository(
                 updatedMap.remove(property)
             } else {
                 updatedMap[property] = track.copy(keyframes = newKeyframes)
+            }
+            clip.copy(keyframeTracks = updatedMap)
+        }
+    }
+
+    fun deleteKeyframe(clipId: String, property: AnimatableProperty, keyframeId: String) {
+        updateClip(clipId, "Delete ${property.displayName} Keyframe") { clip ->
+            val track = clip.keyframeTracks[property] ?: return@updateClip clip
+            val remaining = track.keyframes.filter { it.id != keyframeId }
+            val updatedMap = clip.keyframeTracks.toMutableMap()
+            if (remaining.isEmpty()) {
+                updatedMap.remove(property)
+            } else {
+                updatedMap[property] = track.copy(keyframes = remaining)
+            }
+            clip.copy(keyframeTracks = updatedMap)
+        }
+    }
+
+    fun deleteKeyframeAtTime(clipId: String, property: AnimatableProperty, playheadTimeMs: Long) {
+        updateClip(clipId, "Delete ${property.displayName} Keyframe") { clip ->
+            val relTime = (playheadTimeMs - clip.startTimeMs).coerceIn(0L, clip.durationMs)
+            val track = clip.keyframeTracks[property] ?: return@updateClip clip
+            val target = track.getKeyframeAt(relTime, toleranceMs = 160L) ?: return@updateClip clip
+            val remaining = track.keyframes.filter { it.id != target.id }
+            val updatedMap = clip.keyframeTracks.toMutableMap()
+            if (remaining.isEmpty()) {
+                updatedMap.remove(property)
+            } else {
+                updatedMap[property] = track.copy(keyframes = remaining)
             }
             clip.copy(keyframeTracks = updatedMap)
         }
@@ -597,7 +631,7 @@ class ProjectRepository(
             val updatedMap = clip.keyframeTracks.toMutableMap()
             if (hasTrackKeyframes || forceCreateKeyframe) {
                 val activeTrack = track ?: KeyframeTrack(property = property)
-                val existing = activeTrack.getKeyframeAt(relTime, toleranceMs = 80L)
+                val existing = activeTrack.getKeyframeAt(relTime, toleranceMs = 160L)
                 val nextKeyframes = when {
                     existing != null -> activeTrack.keyframes.map { kf ->
                         if (kf.id == existing.id) kf.copy(value = clamped) else kf
@@ -647,7 +681,7 @@ class ProjectRepository(
             fun upsertIfAnimated(prop: AnimatableProperty, value: Float) {
                 val track = updatedMap[prop] ?: return
                 if (track.keyframes.isEmpty()) return
-                val existing = track.getKeyframeAt(relTime, toleranceMs = 80L)
+                val existing = track.getKeyframeAt(relTime, toleranceMs = 160L)
                 val updatedKfs = if (existing != null) {
                     track.keyframes.map { if (it.id == existing.id) it.copy(value = value) else it }
                 } else {
@@ -694,6 +728,128 @@ class ProjectRepository(
         }
     }
 
+    fun updateClipSpeed(
+        clipId: String,
+        speed: Float,
+        preserveAudioPitch: Boolean,
+        isReversed: Boolean,
+        adjustDuration: Boolean = true
+    ) {
+        val safeSpeed = speed.coerceIn(0.25f, 4.0f)
+        val cur = _currentProject.value
+        val existingClip = cur.findClip(clipId) ?: return
+        val newDuration = if (adjustDuration && existingClip.speed > 0f) {
+            ((existingClip.durationMs * existingClip.speed) / safeSpeed).toLong().coerceIn(300L, 600_000L)
+        } else {
+            existingClip.durationMs
+        }
+        val ratio = if (existingClip.durationMs > 0L) {
+            newDuration.toFloat() / existingClip.durationMs.toFloat()
+        } else 1f
+
+        val updatedTracks = cur.tracks.map { track ->
+            track.copy(
+                clips = track.clips.map { clip ->
+                    if (clip.id == clipId) {
+                        val rescaledKfs = if (adjustDuration && ratio != 1f) {
+                            clip.keyframeTracks.mapValues { (_, kfTrack) ->
+                                kfTrack.copy(
+                                    keyframes = kfTrack.keyframes.map { kf ->
+                                        kf.copy(timeMs = (kf.timeMs * ratio).toLong().coerceIn(0L, newDuration))
+                                    }
+                                )
+                            }
+                        } else clip.keyframeTracks
+                        clip.copy(
+                            speed = safeSpeed,
+                            preserveAudioPitch = preserveAudioPitch,
+                            isReversed = isReversed,
+                            durationMs = newDuration,
+                            keyframeTracks = rescaledKfs
+                        )
+                    } else clip
+                }
+            )
+        }
+        val maxEnd = updatedTracks.flatMap { it.clips }.maxOfOrNull { it.endTimeMs } ?: cur.durationMs
+        val newProjDur = maxOf(cur.durationMs, maxEnd)
+        updateCurrentProject(
+            cur.copy(tracks = updatedTracks, durationMs = newProjDur),
+            "Clip Speed ${String.format(java.util.Locale.US, "%.2fx", safeSpeed)}",
+            coalesceIntervalMs = 200L
+        )
+    }
+
+    fun updateClipTextConfig(clipId: String, textConfig: com.example.model.TextConfig) {
+        updateClip(clipId, "Update Text Style", coalesceIntervalMs = 250L) { clip ->
+            clip.copy(
+                title = textConfig.text.take(28).ifBlank { clip.title },
+                textConfig = textConfig
+            )
+        }
+    }
+
+    fun applyCameraTracking(
+        sourceClipId: String,
+        targetClipId: String,
+        points: List<com.example.model.CameraTrackPoint>,
+        applyTranslation: Boolean,
+        applyScale: Boolean,
+        stabilizeMode: Boolean = false
+    ) {
+        val cur = _currentProject.value
+        val updatedTracks = cur.tracks.map { track ->
+            track.copy(
+                clips = track.clips.map { clip ->
+                    var next = clip
+                    if (clip.id == sourceClipId) {
+                        next = next.copy(cameraTrackPoints = points)
+                    }
+                    if (clip.id == targetClipId && points.isNotEmpty()) {
+                        val updatedMap = next.keyframeTracks.toMutableMap()
+                        val sign = if (stabilizeMode) -1f else 1f
+                        if (applyTranslation) {
+                            val pxKfs = points.map { pt ->
+                                Keyframe(
+                                    timeMs = pt.timeMs.coerceIn(0L, next.durationMs),
+                                    value = (next.baseTransform.positionX + sign * pt.x)
+                                        .coerceIn(AnimatableProperty.POSITION_X.minVal, AnimatableProperty.POSITION_X.maxVal),
+                                    easing = EasingType.Linear
+                                )
+                            }
+                            val pyKfs = points.map { pt ->
+                                Keyframe(
+                                    timeMs = pt.timeMs.coerceIn(0L, next.durationMs),
+                                    value = (next.baseTransform.positionY + sign * pt.y)
+                                        .coerceIn(AnimatableProperty.POSITION_Y.minVal, AnimatableProperty.POSITION_Y.maxVal),
+                                    easing = EasingType.Linear
+                                )
+                            }
+                            updatedMap[AnimatableProperty.POSITION_X] = KeyframeTrack(AnimatableProperty.POSITION_X, pxKfs)
+                            updatedMap[AnimatableProperty.POSITION_Y] = KeyframeTrack(AnimatableProperty.POSITION_Y, pyKfs)
+                        }
+                        if (applyScale) {
+                            val scKfs = points.map { pt ->
+                                val targetScale = if (stabilizeMode) (2f - pt.scale) else pt.scale
+                                Keyframe(
+                                    timeMs = pt.timeMs.coerceIn(0L, next.durationMs),
+                                    value = (next.baseTransform.scaleX * targetScale)
+                                        .coerceIn(AnimatableProperty.SCALE.minVal, AnimatableProperty.SCALE.maxVal),
+                                    easing = EasingType.Linear
+                                )
+                            }
+                            updatedMap[AnimatableProperty.SCALE] = KeyframeTrack(AnimatableProperty.SCALE, scKfs)
+                        }
+                        next = next.copy(keyframeTracks = updatedMap, cameraTrackPoints = points)
+                    }
+                    next
+                }
+            )
+        }
+        val modeLabel = if (stabilizeMode) "Stabilize" else "Camera Track"
+        updateCurrentProject(cur.copy(tracks = updatedTracks), "$modeLabel (${points.size} pts)")
+    }
+
     // --- MASKING MANAGEMENT ---
     fun addMaskToClip(clipId: String, mask: MaskConfig) {
         updateClip(clipId, "Add Mask (${mask.name})") { clip ->
@@ -718,7 +874,7 @@ class ProjectRepository(
             val relTime = (playheadTimeMs - clip.startTimeMs).coerceIn(0L, clip.durationMs)
             val updatedMasks = clip.masks.map { mask ->
                 if (mask.id == maskId) {
-                    val existing = mask.keyframes.find { kotlin.math.abs(it.timeMs - relTime) <= 80L }
+                    val existing = mask.keyframes.find { kotlin.math.abs(it.timeMs - relTime) <= 160L }
                     val newKfs = if (existing != null) {
                         mask.keyframes.filter { it.id != existing.id }
                     } else {
@@ -770,11 +926,12 @@ class ProjectRepository(
             id = UUID.randomUUID().toString(),
             trackId = audioTrack?.id ?: "track_audio_imported",
             title = "${track.title} (${track.artist})",
-            type = com.example.model.ClipType.COLOR_BG,
+            type = com.example.model.ClipType.AUDIO,
             colorHex = track.coverColorHex,
             startTimeMs = playheadTimeMs,
             durationMs = (track.durationSec * 1000L).coerceAtMost(cur.durationMs - playheadTimeMs).coerceAtLeast(4000L),
-            volume = 0.9f
+            volume = 0.9f,
+            waveformSamples = track.waveformSamples
         )
 
         val updatedTracks = if (audioTrack != null) {
@@ -803,7 +960,7 @@ class ProjectRepository(
             id = UUID.randomUUID().toString(),
             trackId = audioTrack?.id ?: "track_voiceovers",
             title = "🎙️ ${voiceOver.title}",
-            type = com.example.model.ClipType.COLOR_BG,
+            type = com.example.model.ClipType.AUDIO,
             colorHex = 0xFF8E24AA,
             startTimeMs = playheadTimeMs,
             durationMs = voiceOver.durationMs,

@@ -3,6 +3,7 @@ package com.example.ui.components
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddBox
 import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -63,6 +65,7 @@ import com.example.engine.Mesh3DParser
 import com.example.model.AnimatableProperty
 import com.example.model.ClipItem
 import com.example.model.ClipType
+import com.example.model.Library3DModel
 import com.example.model.Model3DConfig
 import com.example.model.Model3DSource
 import com.example.model.Primitive3DShape
@@ -134,6 +137,19 @@ fun Model3DEditorPanel(
         }
     }
 
+    val textureImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        val clip = selectedClip ?: return@rememberLauncherForActivityResult
+        val cfg = clip.model3dConfig ?: return@rememberLauncherForActivityResult
+        if (uri != null) {
+            onUpdateModel3D(
+                clip.id,
+                cfg.copy(imageUri = uri.toString())
+            )
+        }
+    }
+
     if (selectedClip == null || selectedClip.type != ClipType.MODEL_3D || selectedClip.model3dConfig == null) {
         Box(
             modifier = modifier
@@ -194,7 +210,10 @@ fun Model3DEditorPanel(
                     fontSize = 13.sp
                 )
                 Text(
-                    text = "${baseCfg.source.label} • ${baseCfg.importedFileName ?: baseCfg.primitiveShape.label}",
+                    text = when (baseCfg.source) {
+                        Model3DSource.LIBRARY_MODEL -> "${baseCfg.source.label} • ${baseCfg.libraryModel.displayName}"
+                        else -> "${baseCfg.source.label} • ${baseCfg.importedFileName ?: baseCfg.primitiveShape.label}"
+                    },
                     color = MotionCyan,
                     fontSize = 11.sp
                 )
@@ -225,7 +244,7 @@ fun Model3DEditorPanel(
             Text(text = importError!!, color = CutRose, fontSize = 11.sp)
         }
 
-        // Source-specific quick editor (Primitives or Extruded Text)
+        // Source-specific quick editor (Primitives, Library Models, or Extruded Text)
         if (baseCfg.source == Model3DSource.PRIMITIVE) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -250,6 +269,30 @@ fun Model3DEditorPanel(
                     }
                 }
             }
+        } else if (baseCfg.source == Model3DSource.LIBRARY_MODEL) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Library3DModel.entries.forEach { libModel ->
+                    val active = libModel == baseCfg.libraryModel
+                    Surface(
+                        color = if (active) MotionCyan.copy(alpha = 0.2f) else StudioSurfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, if (active) MotionCyan else StudioBorder),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onUpdateModel3D(selectedClip.id, baseCfg.copy(libraryModel = libModel)) }
+                    ) {
+                        Text(
+                            text = libModel.displayName,
+                            color = if (active) Color.White else Color.LightGray,
+                            fontSize = 10.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
         } else if (baseCfg.source == Model3DSource.EXTRUDED_TEXT) {
             OutlinedTextField(
                 value = baseCfg.extrudedText,
@@ -263,6 +306,59 @@ fun Model3DEditorPanel(
                     unfocusedTextColor = Color.White
                 ),
                 modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // Universal Image Texture controls on ALL 3D objects
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedButton(
+                onClick = {
+                    textureImageLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                border = BorderStroke(1.dp, PlayheadAmber),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = PlayheadAmber),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(34.dp)
+                    .testTag("panel_3d_texture_button")
+            ) {
+                Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.size(5.dp))
+                Text(
+                    text = if (baseCfg.imageUri != null) "Change Texture Image" else "Apply Image Texture",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            if (baseCfg.imageUri != null) {
+                OutlinedButton(
+                    onClick = { onUpdateModel3D(selectedClip.id, baseCfg.copy(imageUri = null)) },
+                    border = BorderStroke(1.dp, CutRose),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = CutRose),
+                    modifier = Modifier
+                        .height(34.dp)
+                        .testTag("panel_3d_clear_texture_button")
+                ) {
+                    Text("Clear", fontSize = 10.sp)
+                }
+            }
+        }
+        if (baseCfg.imageUri != null) {
+            Keyframe3DSliderRow(
+                label = "Tex Mix",
+                value = baseCfg.textureMix,
+                range = 0f..1f,
+                unit = "",
+                hasKf = false,
+                showKfButton = false,
+                onValueChange = { onUpdateModel3D(selectedClip.id, baseCfg.copy(textureMix = it)) },
+                onToggleKf = {}
             )
         }
 

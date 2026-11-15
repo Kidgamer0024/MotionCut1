@@ -76,6 +76,8 @@ import com.example.ui.EditorViewModel
 import com.example.ui.components.Add3DModelDialog
 import com.example.ui.components.AddLayerDialog
 import com.example.ui.components.AiStudioModal
+import com.example.ui.components.CameraTrackerPanel
+import com.example.ui.components.ClipSpeedPanel
 import com.example.ui.components.ColorGradingMainPanel
 import com.example.ui.components.EditorBottomBar
 import com.example.ui.components.EditorDockOption
@@ -91,6 +93,7 @@ import com.example.ui.components.Model3DEditorPanel
 import com.example.ui.components.MusicLibrarySheet
 import com.example.ui.components.ScopesVisualizer
 import com.example.ui.components.SplitIntoPartsDialog
+import com.example.ui.components.TextEditorPanel
 import com.example.ui.components.TimelineView
 import com.example.ui.components.UpscaleResolutionDialog
 import com.example.ui.components.VideoMonitorCanvas
@@ -162,6 +165,10 @@ fun EditorScreen(
     val lastUndoDesc by viewModel.lastUndoDescription.collectAsState()
     val lastRedoDesc by viewModel.lastRedoDescription.collectAsState()
     val undoToastMessage by viewModel.undoToastMessage.collectAsState()
+
+    val isCameraTracking by viewModel.isCameraTracking.collectAsState()
+    val cameraTrackingStatus by viewModel.cameraTrackingStatus.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val resolvedTargetClipId = viewModel.resolveTargetClipId()
     val resolvedTargetClip = resolvedTargetClipId?.let { project.findClip(it) }
@@ -580,6 +587,8 @@ fun EditorScreen(
                                 selectedProperty = activeProperty,
                                 onSelectProperty = { viewModel.setActiveProperty(it) },
                                 onToggleKeyframe = { viewModel.toggleKeyframeOnSelectedClip() },
+                                onDeleteKeyframe = { prop, kfId -> viewModel.deleteKeyframe(prop, kfId) },
+                                onClearTrack = { prop -> viewModel.clearKeyframesForProperty(prop) },
                                 onJumpToKeyframe = { next -> viewModel.jumpToAdjacentKeyframe(next) },
                                 onSeekInClip = { timeMs -> viewModel.seek(timeMs) },
                                 onUpdateEasing = { prop, kfId, easing ->
@@ -602,6 +611,44 @@ fun EditorScreen(
                                 )
                             }
                         }
+                    }
+                    EditorToolTab.TEXT -> {
+                        TextEditorPanel(
+                            selectedClip = selectedClip,
+                            onUpdateTextConfig = { viewModel.updateClipTextConfig(it) },
+                            onOpenAddTextModal = { viewModel.setShowAddLayer(true) },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    EditorToolTab.SPEED -> {
+                        ClipSpeedPanel(
+                            selectedClip = selectedClip ?: resolvedTargetClip,
+                            onApplySpeed = { speed, preservePitch, reversed, adjustDur ->
+                                viewModel.updateClipSpeed(speed, preservePitch, reversed, adjustDur)
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    EditorToolTab.CAMERA_TRACK -> {
+                        CameraTrackerPanel(
+                            project = project,
+                            selectedClip = selectedClip ?: resolvedTargetClip,
+                            isTracking = isCameraTracking,
+                            statusMessage = cameraTrackingStatus,
+                            onRunTracking = { srcId, tgtId, rx, ry, applyPos, applyScale, stabilize ->
+                                viewModel.runCameraTracking(
+                                    context = context,
+                                    sourceClipId = srcId,
+                                    targetClipId = tgtId,
+                                    roiNormX = rx,
+                                    roiNormY = ry,
+                                    applyTranslation = applyPos,
+                                    applyScale = applyScale,
+                                    stabilizeMode = stabilize
+                                )
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
                     EditorToolTab.COLOR_GRADING -> {
                         val activeGrading = selectedClip?.colorGrading ?: project.masterColorGrading

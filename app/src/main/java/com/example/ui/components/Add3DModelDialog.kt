@@ -63,10 +63,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import com.example.data.DeviceMediaScanner
 import com.example.engine.Mesh3DParser
 import com.example.engine.Mesh3DRenderer.drawModel3D
 import com.example.model.ClipItem
 import com.example.model.ClipType
+import com.example.model.Library3DModel
 import com.example.model.Model3DConfig
 import com.example.model.Model3DSource
 import com.example.model.Primitive3DShape
@@ -96,8 +100,10 @@ fun Add3DModelDialog(
 
     var selectedSource by remember { mutableStateOf(Model3DSource.PRIMITIVE) }
     var selectedPrimitive by remember { mutableStateOf(Primitive3DShape.CUBE) }
+    var selectedLibraryModel by remember { mutableStateOf(Library3DModel.ROCKET) }
     var extrudedText by remember { mutableStateOf("NOVA 3D") }
     var extrusionDepth by remember { mutableFloatStateOf(0.42f) }
+    var textureMix by remember { mutableFloatStateOf(0.85f) }
     var materialColorHex by remember { mutableLongStateOf(0xFF00E5FF) }
 
     var importedUri by remember { mutableStateOf<String?>(null) }
@@ -152,11 +158,19 @@ fun Add3DModelDialog(
         }
     }
 
+    val previewTextureBmp by produceState<ImageBitmap?>(initialValue = null, key1 = imagePlaneUri) {
+        value = imagePlaneUri?.let { uri ->
+            DeviceMediaScanner.loadFullImageBitmap(context, uri, isVideoHint = false)
+        }
+    }
+
     val previewConfig = remember(
         selectedSource,
         selectedPrimitive,
+        selectedLibraryModel,
         extrudedText,
         extrusionDepth,
+        textureMix,
         materialColorHex,
         importedUri,
         importedFileName,
@@ -165,10 +179,12 @@ fun Add3DModelDialog(
         Model3DConfig(
             source = selectedSource,
             primitiveShape = selectedPrimitive,
+            libraryModel = selectedLibraryModel,
             importedUri = importedUri,
             importedFileName = importedFileName,
             extrudedText = extrudedText,
             imageUri = imagePlaneUri,
+            textureMix = textureMix,
             rotationX = 20f,
             rotationY = -32f,
             extrusionDepth = extrusionDepth,
@@ -237,7 +253,8 @@ fun Add3DModelDialog(
                             drawModel3D(
                                 mesh = previewMesh,
                                 config = previewConfig,
-                                viewportSize = size.minDimension * 1.1f
+                                viewportSize = size.minDimension * 1.1f,
+                                planeImageBitmap = previewTextureBmp
                             )
                         }
                     }
@@ -310,6 +327,40 @@ fun Add3DModelDialog(
                         }
                     }
 
+                    Model3DSource.LIBRARY_MODEL -> {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Library3DModel.entries.forEach { libModel ->
+                                val active = libModel == selectedLibraryModel
+                                Surface(
+                                    color = if (active) MotionCyan.copy(alpha = 0.22f) else StudioCardBg,
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, if (active) MotionCyan else StudioBorder),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { selectedLibraryModel = libModel }
+                                        .testTag("lib_3d_${libModel.name.lowercase()}")
+                                ) {
+                                    Column(modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)) {
+                                        Text(
+                                            text = libModel.displayName,
+                                            color = if (active) Color.White else Color.LightGray,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = libModel.category,
+                                            color = if (active) MotionCyan else Color.Gray,
+                                            fontSize = 9.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     Model3DSource.IMPORTED_FILE -> {
                         OutlinedButton(
                             onClick = { modelFileLauncher.launch(arrayOf("*/*")) },
@@ -362,30 +413,72 @@ fun Add3DModelDialog(
                     }
 
                     Model3DSource.IMAGE_PLANE -> {
-                        OutlinedButton(
-                            onClick = {
-                                imagePlaneLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            },
-                            border = BorderStroke(1.dp, PlayheadAmber),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = PlayheadAmber),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("pick_3d_plane_image_button")
-                        ) {
-                            Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.size(8.dp))
-                            Text(
-                                text = if (imagePlaneUri != null) "Image Selected — Tap to Change" else "Pick Image for 3D Card Plane",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Text(
+                            text = "3D Photo Card projects your selected image onto a dual-sided 3D card.",
+                            color = Color.LightGray,
+                            fontSize = 11.sp
+                        )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
+
+                // Universal Image Texture Picker for ALL 3D objects
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            imagePlaneLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        border = BorderStroke(1.dp, PlayheadAmber),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PlayheadAmber),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("pick_3d_plane_image_button")
+                    ) {
+                        Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Spacer(modifier = Modifier.size(6.dp))
+                        Text(
+                            text = if (imagePlaneUri != null) "Change Image Texture" else "Apply Image Texture",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if (imagePlaneUri != null) {
+                        OutlinedButton(
+                            onClick = { imagePlaneUri = null },
+                            border = BorderStroke(1.dp, CutRose),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CutRose)
+                        ) {
+                            Text("Clear", fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                if (imagePlaneUri != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("Texture Mix", color = Color.LightGray, fontSize = 11.sp)
+                        Slider(
+                            value = textureMix,
+                            onValueChange = { textureMix = it },
+                            valueRange = 0f..1f,
+                            colors = SliderDefaults.colors(thumbColor = PlayheadAmber, activeTrackColor = PlayheadAmber),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text("${(textureMix * 100).toInt()}%", color = PlayheadAmber, fontSize = 11.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
 
                 // Extrusion depth slider
                 Row(
@@ -401,7 +494,7 @@ fun Add3DModelDialog(
                         colors = SliderDefaults.colors(thumbColor = MotionCyan, activeTrackColor = MotionCyan),
                         modifier = Modifier.weight(1f)
                     )
-                    Text(String.format("%.2f", extrusionDepth), color = MotionCyan, fontSize = 11.sp)
+                    Text(String.format(java.util.Locale.US, "%.2f", extrusionDepth), color = MotionCyan, fontSize = 11.sp)
                 }
 
                 // Material Color Swatches
@@ -430,6 +523,7 @@ fun Add3DModelDialog(
                     onClick = {
                         val title = when (selectedSource) {
                             Model3DSource.PRIMITIVE -> "3D ${selectedPrimitive.label}"
+                            Model3DSource.LIBRARY_MODEL -> "3D ${selectedLibraryModel.displayName}"
                             Model3DSource.IMPORTED_FILE -> importedFileName ?: "3D Imported Mesh"
                             Model3DSource.EXTRUDED_TEXT -> "3D Text: ${extrudedText.ifBlank { "3D" }}"
                             Model3DSource.IMAGE_PLANE -> "3D Image Card"

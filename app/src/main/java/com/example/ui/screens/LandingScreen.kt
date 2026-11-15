@@ -259,6 +259,48 @@ fun LandingScreen(
                 }
             }
 
+            if (cloudSyncState is CloudSyncState.Error) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    val errMsg = (cloudSyncState as CloudSyncState.Error).message
+                    Surface(
+                        color = CutRose.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CutRose.copy(alpha = 0.55f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("cloud_sync_error_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = errMsg,
+                                color = CutRose,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.retryCloudSync() },
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CutRose),
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .testTag("retry_cloud_sync_button")
+                            ) {
+                                Text("Retry Sync", color = CutRose, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
             // 5. Empty State (if no projects found)
             if (projects.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {

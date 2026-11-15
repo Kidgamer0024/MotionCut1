@@ -55,6 +55,7 @@ data class CloudProject(
     val thumbnailResId: Int? = null,
     val clipCount: Long = 1L,
     val trackCount: Long = 1L,
+    val projectJson: String = "",
     val createdAt: Timestamp? = null,
     val updatedAt: Timestamp? = null
 ) {
@@ -71,6 +72,7 @@ data class CloudProject(
             "thumbnailResId" to thumbnailResId,
             "clipCount" to clipCount.coerceIn(0L, 10_000L),
             "trackCount" to trackCount.coerceIn(0L, 500L),
+            "projectJson" to projectJson.take(850_000),
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
         )
@@ -90,6 +92,7 @@ data class CloudProject(
             "thumbnailResId" to thumbnailResId,
             "clipCount" to clipCount.coerceIn(0L, 10_000L),
             "trackCount" to trackCount.coerceIn(0L, 500L),
+            "projectJson" to projectJson.take(850_000),
             "updatedAt" to FieldValue.serverTimestamp()
         )
         @Suppress("UNCHECKED_CAST")
@@ -111,7 +114,7 @@ data class CloudProject(
             thumbnailColorHex = thumbnailColorHex,
             clipCount = clipCount.toInt(),
             trackCount = trackCount.toInt(),
-            projectJson = "",
+            projectJson = projectJson,
             createdAt = createdMs,
             updatedAt = updatedMs
         )
@@ -136,7 +139,8 @@ data class CloudProject(
                 thumbnailColorHex = entity.thumbnailColorHex,
                 thumbnailResId = entity.thumbnailResId,
                 clipCount = entity.clipCount.toLong(),
-                trackCount = entity.trackCount.toLong()
+                trackCount = entity.trackCount.toLong(),
+                projectJson = entity.projectJson
             )
         }
     }
