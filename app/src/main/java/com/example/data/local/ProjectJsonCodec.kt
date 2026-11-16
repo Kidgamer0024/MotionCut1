@@ -71,6 +71,35 @@ object ProjectJsonCodec {
         return root.toString()
     }
 
+    fun encodeBoundedForCloud(project: Project, maxChars: Int = 840_000): String {
+        val full = encode(project)
+        if (full.length <= maxChars) return full
+        val trimmedWaveforms = project.copy(
+            tracks = project.tracks.map { track ->
+                track.copy(
+                    clips = track.clips.map { clip ->
+                        clip.copy(
+                            waveformSamples = clip.waveformSamples.take(32),
+                            cameraTrackPoints = clip.cameraTrackPoints.take(60)
+                        )
+                    }
+                )
+            }
+        )
+        val pass1 = encode(trimmedWaveforms)
+        if (pass1.length <= maxChars) return pass1
+        val strippedSamples = project.copy(
+            tracks = project.tracks.map { track ->
+                track.copy(
+                    clips = track.clips.map { clip ->
+                        clip.copy(waveformSamples = emptyList(), cameraTrackPoints = emptyList())
+                    }
+                )
+            }
+        )
+        return encode(strippedSamples)
+    }
+
     fun decode(jsonStr: String): Project? {
         if (jsonStr.isBlank()) return null
         return runCatching {
@@ -202,6 +231,7 @@ object ProjectJsonCodec {
                 if (eff.kernel != null) put("kernel", eff.kernel.name)
                 put("paramA", eff.paramA.toDouble())
                 put("paramB", eff.paramB.toDouble())
+                put("colorHex", eff.colorHex)
                 put("paramALabel", eff.paramALabel)
                 put("paramBLabel", eff.paramBLabel)
             })
@@ -350,6 +380,7 @@ object ProjectJsonCodec {
                         ?.let { runCatching { EffectKernel.valueOf(it) }.getOrNull() },
                     paramA = eObj.optDouble("paramA", 0.5).toFloat(),
                     paramB = eObj.optDouble("paramB", 0.5).toFloat(),
+                    colorHex = eObj.optLong("colorHex", 0xFF00E5FF),
                     paramALabel = eObj.optString("paramALabel", "Detail"),
                     paramBLabel = eObj.optString("paramBLabel", "Phase")
                 )
@@ -647,6 +678,11 @@ object ProjectJsonCodec {
         obj.put("featherPx", mask.featherPx.toDouble())
         obj.put("opacity", mask.opacity.toDouble())
         obj.put("expansion", mask.expansion.toDouble())
+        obj.put("cornerRadiusPx", mask.cornerRadiusPx.toDouble())
+        obj.put("aspectWidth", mask.aspectWidth.toDouble())
+        obj.put("aspectHeight", mask.aspectHeight.toDouble())
+        obj.put("borderWidthPx", mask.borderWidthPx.toDouble())
+        obj.put("borderColorHex", mask.borderColorHex)
         obj.put("positionX", mask.positionX.toDouble())
         obj.put("positionY", mask.positionY.toDouble())
         obj.put("scaleX", mask.scaleX.toDouble())
@@ -716,6 +752,11 @@ object ProjectJsonCodec {
             featherPx = obj.optDouble("featherPx", 0.0).toFloat(),
             opacity = obj.optDouble("opacity", 1.0).toFloat(),
             expansion = obj.optDouble("expansion", 0.0).toFloat(),
+            cornerRadiusPx = obj.optDouble("cornerRadiusPx", 16.0).toFloat(),
+            aspectWidth = obj.optDouble("aspectWidth", 1.0).toFloat(),
+            aspectHeight = obj.optDouble("aspectHeight", 1.0).toFloat(),
+            borderWidthPx = obj.optDouble("borderWidthPx", 0.0).toFloat(),
+            borderColorHex = obj.optLong("borderColorHex", 0xFFFFFFFF),
             positionX = obj.optDouble("positionX", 0.0).toFloat(),
             positionY = obj.optDouble("positionY", 0.0).toFloat(),
             scaleX = obj.optDouble("scaleX", 1.0).toFloat(),

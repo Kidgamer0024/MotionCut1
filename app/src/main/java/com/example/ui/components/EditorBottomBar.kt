@@ -21,10 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoFixHigh
-import androidx.compose.material.icons.filled.ClosedCaption
-import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Hd
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
@@ -68,9 +65,6 @@ private val DockAddGreen = Color(0xFF10E878)
 
 enum class EditorDockOption(val tag: String) {
     ADD("add"),
-    AI("ai"),
-    LIBRARY("library"),
-    CAPTIONS("captions"),
     LINK("link"),
     LAYOUT("layout"),
     REMOVE_BG("remove_bg"),
@@ -115,34 +109,6 @@ fun EditorBottomBar(
                             AddDockItem(
                                 label = stringResource(R.string.dock_add),
                                 onClick = { onOptionClick(EditorDockOption.ADD) }
-                            )
-                        }
-                        EditorDockOption.AI -> {
-                            StandardDockItem(
-                                tag = option.tag,
-                                label = stringResource(R.string.dock_ai),
-                                icon = Icons.Default.AutoAwesome,
-                                tint = if (isAiProcessing) MotionCyan else DockIconSlate,
-                                isActive = isAiProcessing,
-                                onClick = { onOptionClick(option) }
-                            )
-                        }
-                        EditorDockOption.LIBRARY -> {
-                            StandardDockItem(
-                                tag = option.tag,
-                                label = stringResource(R.string.dock_library),
-                                icon = Icons.Default.CloudDownload,
-                                tint = DockIconSlate,
-                                onClick = { onOptionClick(option) }
-                            )
-                        }
-                        EditorDockOption.CAPTIONS -> {
-                            StandardDockItem(
-                                tag = option.tag,
-                                label = stringResource(R.string.dock_captions),
-                                icon = Icons.Default.ClosedCaption,
-                                tint = DockIconSlate,
-                                onClick = { onOptionClick(option) }
                             )
                         }
                         EditorDockOption.LINK -> {

@@ -98,17 +98,10 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
-@SuppressLint("DiscouragedApi")
 private fun resolveDefaultWebClientId(context: Context): String? {
-    val resId = context.resources.getIdentifier(
-        "default_web_client_id",
-        "string",
-        context.packageName
-    )
-    if (resId == 0) return null
     return try {
-        context.getString(resId).takeIf { it.isNotBlank() }
-    } catch (e: Exception) {
+        context.getString(R.string.default_web_client_id).takeIf { it.isNotBlank() }
+    } catch (_: Exception) {
         null
     }
 }
@@ -295,7 +288,7 @@ fun AuthScreen(
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     Image(
-                        painter = painterResource(id = R.drawable.cyberpunk_city),
+                        painter = painterResource(id = R.drawable.drone_coastline),
                         contentDescription = "MotionCut Studio Backdrop",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
@@ -362,7 +355,7 @@ fun AuthScreen(
                                     }
                                 }
                                 Text(
-                                    text = "Keyframe, Color & AI Motion Studio",
+                                    text = "Keyframe, Color & 3D Motion Studio",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color.LightGray
                                 )
@@ -393,7 +386,7 @@ fun AuthScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Back up your video timelines, keyframe projects, and AI edits securely to Cloud Firestore under your Google account.",
+                        text = "Back up your video timelines, keyframe projects, and 3D edits securely to Cloud Firestore under your Google account.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.LightGray
                     )
@@ -407,8 +400,8 @@ fun AuthScreen(
                     AuthFeatureRow(
                         icon = Icons.Default.AutoAwesome,
                         tint = KeyframeViolet,
-                        title = "Gemini AI VFX Tools",
-                        subtitle = "Smart background cutout, look matcher & kinetic captions"
+                        title = "Pro Keyframe & FX Studio",
+                        subtitle = "Auto cutout, optical camera tracking & 3D extruded layers"
                     )
                     AuthFeatureRow(
                         icon = Icons.Default.Security,

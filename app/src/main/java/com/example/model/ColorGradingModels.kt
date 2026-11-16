@@ -35,7 +35,7 @@ data class HslAdjustment(
 enum class LutPreset(val displayName: String, val previewColor: Long, val description: String) {
     NONE("Rec.709 Natural", 0xFF708090, "Standard neutral television broadcast color space"),
     TEAL_AND_ORANGE("Teal & Orange", 0xFF00B4D8, "Hollywood blockbuster contrasting skin tones and shadows"),
-    CYBER_NEON("Cyberpunk Neon", 0xFFE040FB, "Electric ultraviolet highlights and saturated cyan shadows"),
+    CYBER_NEON("Ultraviolet Cinema", 0xFFE040FB, "Electric ultraviolet highlights and cool studio shadows"),
     BLEACH_BYPASS("Bleach Bypass", 0xFFB0BEC5, "High contrast, silver-retained desaturated gritty action look"),
     KODACHROME("Kodachrome 64", 0xFFFF8A65, "Rich warm vintage 1970s magazine film stock"),
     FUJI_ETERNA("Fuji Eterna", 0xFF4DB6AC, "Soft pastel highlights, subtle shadows, organic film texture"),

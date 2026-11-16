@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
+import android.graphics.ImageDecoder
 import android.graphics.LightingColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Matrix
@@ -27,6 +28,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.core.content.FileProvider
 import com.example.data.DeviceMediaScanner
 import com.example.model.AspectRatio
@@ -362,6 +364,25 @@ object VideoExporter {
             val cm = ColorMatrix(ColorGradingCompositor.createColorMatrix(clip.colorGrading).values)
             val colorFilter = ColorMatrixColorFilter(cm)
 
+            val enabledMask = clip.masks.firstOrNull { it.isEnabled }
+            val evaluatedMask = enabledMask?.let { mask ->
+                MaskCompositor.evaluateMask(
+                    mask = mask,
+                    currentTimeMs = timeMs,
+                    clipStartTimeMs = clip.startTimeMs,
+                    clipWidth = canvasW.toFloat(),
+                    clipHeight = canvasH.toFloat()
+                )
+            }
+            if (evaluatedMask != null) {
+                canvas.save()
+                canvas.translate(evaluatedMask.positionX * scaleRef, evaluatedMask.positionY * scaleRef)
+                canvas.rotate(evaluatedMask.rotation)
+                canvas.clipPath(evaluatedMask.path.asAndroidPath())
+                canvas.rotate(-evaluatedMask.rotation)
+                canvas.translate(-evaluatedMask.positionX * scaleRef, -evaluatedMask.positionY * scaleRef)
+            }
+
             when (clip.type) {
                 ClipType.VIDEO_SAMPLE -> {
                     val videoRet = retrieverCache[clip.id]
@@ -393,7 +414,7 @@ object VideoExporter {
                         if (dynamicFrame != null && dynamicFrame !== bitmapCache[clip.id]) {
                             dynamicFrame.recycle()
                         }
-                    } else {
+                    } else if (clip.mediaUri == null && clip.assetResId == null) {
                         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                             color = clip.colorHex.toInt()
                             alpha = (opacity * 255).roundToInt().coerceIn(0, 255)
@@ -499,6 +520,22 @@ object VideoExporter {
                 }
             }
 
+            if (evaluatedMask != null) {
+                canvas.restore()
+                if (evaluatedMask.borderWidthPx > 0.2f) {
+                    val bPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        style = Paint.Style.STROKE
+                        strokeWidth = evaluatedMask.borderWidthPx * scaleRef
+                        color = evaluatedMask.borderColorHex.toInt()
+                    }
+                    canvas.save()
+                    canvas.translate(evaluatedMask.positionX * scaleRef, evaluatedMask.positionY * scaleRef)
+                    canvas.rotate(evaluatedMask.rotation)
+                    canvas.drawPath(evaluatedMask.path.asAndroidPath(), bPaint)
+                    canvas.restore()
+                }
+            }
+
             if (clip.effects.isNotEmpty()) {
                 drawEffectOverlaysToCanvas(
                     canvas = canvas,
@@ -527,13 +564,17 @@ object VideoExporter {
             val intensity = effect.intensity.coerceIn(0f, 1f)
             val timePhase = (timeMs / 1000f) * effect.speed + effect.paramB * 6.28f
             val detail = effect.paramA.coerceIn(0.05f, 1f)
+            val fxInt = effect.colorHex.toInt()
+            val fxR = Color.red(fxInt)
+            val fxG = Color.green(fxInt)
+            val fxB = Color.blue(fxInt)
 
             when (effect.effectiveKernel) {
                 EffectKernel.SCANLINES -> {
                     val spacing = (14f - detail * 9f).coerceAtLeast(4f) * scaleRef
                     val offset = (timePhase * 12f) % spacing
                     val paint = Paint().apply {
-                        color = Color.argb((intensity * 0.40f * 255).roundToInt(), 0, 0, 0)
+                        color = Color.argb((intensity * 0.38f * 255).roundToInt(), fxR, fxG, fxB)
                         strokeWidth = 2f * scaleRef
                     }
                     var ly = -canvasH / 2f + offset
@@ -547,13 +588,13 @@ object VideoExporter {
                     val angle = timePhase * 0.5f
                     val dx = cos(angle) * shift
                     val dy = sin(angle) * shift * 0.35f
-                    val pCyan = Paint().apply {
-                        color = Color.argb((0.14f * intensity * 255).roundToInt(), 0, 229, 255)
+                    val pPrimary = Paint().apply {
+                        color = Color.argb((0.14f * intensity * 255).roundToInt(), fxR, fxG, fxB)
                     }
                     val pPink = Paint().apply {
                         color = Color.argb((0.14f * intensity * 255).roundToInt(), 255, 46, 99)
                     }
-                    canvas.drawRect(-canvasW / 2f - dx, -canvasH / 2f - dy, canvasW / 2f - dx, canvasH / 2f - dy, pCyan)
+                    canvas.drawRect(-canvasW / 2f - dx, -canvasH / 2f - dy, canvasW / 2f - dx, canvasH / 2f - dy, pPrimary)
                     canvas.drawRect(-canvasW / 2f + dx, -canvasH / 2f + dy, canvasW / 2f + dx, canvasH / 2f + dy, pPink)
                 }
                 EffectKernel.GLOW -> {
@@ -564,7 +605,7 @@ object VideoExporter {
                             0f, 0f, radius,
                             intArrayOf(
                                 Color.argb((0.20f * intensity * pulse * 255).roundToInt().coerceIn(0, 255), 255, 255, 255),
-                                Color.argb((0.14f * intensity * pulse * 255).roundToInt().coerceIn(0, 255), 0, 229, 255),
+                                Color.argb((0.16f * intensity * pulse * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB),
                                 Color.TRANSPARENT
                             ),
                             floatArrayOf(0f, 0.5f, 1f),
@@ -580,7 +621,7 @@ object VideoExporter {
                             0f, 0f, radius,
                             intArrayOf(
                                 Color.TRANSPARENT,
-                                Color.argb((0.65f * intensity * 255).roundToInt().coerceIn(0, 255), 0, 0, 0)
+                                Color.argb((0.65f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
                             ),
                             floatArrayOf(0.45f, 1f),
                             Shader.TileMode.CLAMP
@@ -594,14 +635,21 @@ object VideoExporter {
                         (0.16f * intensity * 255).roundToInt().coerceIn(0, 255),
                         floatArrayOf(hue, 0.85f, 1f)
                     )
-                    val p = Paint().apply { color = tintArgb }
+                    val p = Paint().apply {
+                        shader = LinearGradient(
+                            0f, -canvasH / 2f, 0f, canvasH / 2f,
+                            Color.argb((0.18f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB),
+                            tintArgb,
+                            Shader.TileMode.CLAMP
+                        )
+                    }
                     canvas.drawRect(-canvasW / 2f, -canvasH / 2f, canvasW / 2f, canvasH / 2f, p)
                 }
                 EffectKernel.NEON_EDGES -> {
                     val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         style = Paint.Style.STROKE
                         strokeWidth = (2f + detail * 3f) * scaleRef
-                        color = Color.argb((0.45f * intensity * 255).roundToInt(), 155, 89, 255)
+                        color = Color.argb((0.50f * intensity * 255).roundToInt(), fxR, fxG, fxB)
                     }
                     val rect = RectF(-canvasW * 0.44f, -canvasH * 0.44f, canvasW * 0.44f, canvasH * 0.44f)
                     canvas.drawRoundRect(rect, 12f * scaleRef, 12f * scaleRef, p)
@@ -613,11 +661,7 @@ object VideoExporter {
                     for (idx in 0 until count) {
                         val px = sin(idx * 1.9f + timePhase * 0.8f) * canvasW * 0.42f
                         val py = cos(idx * 2.3f + timePhase * 0.6f) * canvasH * 0.42f
-                        p.color = when {
-                            idx % 3 == 0 -> Color.argb(alphaInt, 255, 179, 0)
-                            idx % 2 == 0 -> Color.argb(alphaInt, 0, 229, 255)
-                            else -> Color.argb(alphaInt, 255, 255, 255)
-                        }
+                        p.color = if (idx % 2 == 0) Color.argb(alphaInt, fxR, fxG, fxB) else Color.argb(alphaInt, 255, 255, 255)
                         canvas.drawCircle(px, py, (1.8f + (idx % 3)) * scaleRef, p)
                     }
                 }
@@ -632,8 +676,8 @@ object VideoExporter {
                             sweepX - barW / 2f, 0f, sweepX + barW / 2f, 0f,
                             intArrayOf(
                                 Color.TRANSPARENT,
-                                Color.argb((0.35f * intensity * 255).roundToInt().coerceIn(0, 255), 255, 255, 255),
-                                Color.argb((0.18f * intensity * 255).roundToInt().coerceIn(0, 255), 255, 179, 0),
+                                Color.argb((0.32f * intensity * 255).roundToInt().coerceIn(0, 255), 255, 255, 255),
+                                Color.argb((0.22f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB),
                                 Color.TRANSPARENT
                             ),
                             null,
@@ -646,13 +690,81 @@ object VideoExporter {
                 EffectKernel.MOTION_BLUR -> {
                     val streaks = (4 + (detail * 8).toInt()).coerceAtMost(12)
                     val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.argb((0.12f * intensity * 255).roundToInt().coerceIn(0, 255), 255, 255, 255)
+                        color = Color.argb((0.12f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
                         strokeWidth = 3f * scaleRef
                     }
                     for (i in 0 until streaks) {
                         val yOff = (-canvasH * 0.38f) + (i / streaks.toFloat()) * (canvasH * 0.76f)
                         val dx = sin(timePhase + i) * 18f * intensity * scaleRef
                         canvas.drawLine(-canvasW * 0.45f + dx, yOff, canvasW * 0.45f + dx, yOff, p)
+                    }
+                }
+                EffectKernel.GAUSSIAN_BLUR -> {
+                    for (l in 1..3) {
+                        val frac = 0.90f - l * 0.12f
+                        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color = Color.argb((((0.09f + detail * 0.10f) * intensity / l) * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
+                        }
+                        val rect = RectF(-canvasW * frac / 2f, -canvasH * frac / 2f, canvasW * frac / 2f, canvasH * frac / 2f)
+                        canvas.drawRoundRect(rect, 18f * l * scaleRef, 18f * l * scaleRef, p)
+                    }
+                }
+                EffectKernel.RADIAL_BLUR -> {
+                    val rings = (3 + (detail * 5).toInt()).coerceIn(3, 8)
+                    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        style = Paint.Style.STROKE
+                        strokeWidth = (3f + detail * 4f) * scaleRef
+                    }
+                    for (i in 1..rings) {
+                        p.color = Color.argb(((0.18f / i) * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
+                        canvas.drawCircle(0f, 0f, (min(canvasW, canvasH) * 0.12f) * i, p)
+                    }
+                }
+                EffectKernel.AMBIENT_BACKDROP -> {
+                    val radius = (max(canvasW, canvasH) * (0.48f + detail * 0.35f)).coerceAtLeast(32f)
+                    val shiftX = sin(timePhase * 0.6f) * canvasW * 0.08f
+                    val shiftY = cos(timePhase * 0.5f) * canvasH * 0.08f
+                    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = RadialGradient(
+                            shiftX, shiftY, radius,
+                            intArrayOf(
+                                Color.argb((0.32f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB),
+                                Color.argb((0.10f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB),
+                                Color.TRANSPARENT
+                            ),
+                            floatArrayOf(0f, 0.55f, 1f),
+                            Shader.TileMode.CLAMP
+                        )
+                    }
+                    canvas.drawRect(-canvasW / 2f, -canvasH / 2f, canvasW / 2f, canvasH / 2f, p)
+                }
+                EffectKernel.BOKEH_BACKDROP -> {
+                    val orbCount = (6 + (detail * 10).toInt()).coerceIn(6, 16)
+                    val p = Paint(Paint.ANTI_ALIAS_FLAG)
+                    for (i in 0 until orbCount) {
+                        val ox = sin(i * 1.618f + timePhase * 0.4f) * canvasW * 0.38f
+                        val oy = cos(i * 2.13f + timePhase * 0.35f) * canvasH * 0.38f
+                        val rad = (12f + (i % 4) * 9f + detail * 14f) * scaleRef
+                        p.color = Color.argb(((0.12f + (i % 3) * 0.06f) * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
+                        canvas.drawCircle(ox, oy, rad, p)
+                    }
+                }
+                EffectKernel.GRID_MATRIX -> {
+                    val cell = (28f - detail * 14f).coerceAtLeast(12f) * scaleRef
+                    val shiftY = (timePhase * 10f) % cell
+                    val p = Paint().apply {
+                        color = Color.argb((0.20f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
+                        strokeWidth = 1f * scaleRef
+                    }
+                    var gx = -canvasW / 2f
+                    while (gx <= canvasW / 2f) {
+                        canvas.drawLine(gx, -canvasH / 2f, gx, canvasH / 2f, p)
+                        gx += cell
+                    }
+                    var gy = -canvasH / 2f + shiftY
+                    while (gy <= canvasH / 2f) {
+                        canvas.drawLine(-canvasW / 2f, gy, canvasW / 2f, gy, p)
+                        gy += cell
                     }
                 }
                 EffectKernel.WAVE_WARP -> {
@@ -662,7 +774,7 @@ object VideoExporter {
                     val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         style = Paint.Style.STROKE
                         strokeWidth = 1.5f * scaleRef
-                        color = Color.argb((0.22f * intensity * 255).roundToInt().coerceIn(0, 255), 0, 229, 255)
+                        color = Color.argb((0.24f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
                     }
                     for (w in 0 until waves) {
                         val baseY = -canvasH * 0.35f + (w / (waves - 1f)) * (canvasH * 0.70f)
@@ -683,14 +795,14 @@ object VideoExporter {
                     val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         style = Paint.Style.STROKE
                         strokeWidth = 1.5f * scaleRef
-                        color = Color.argb((0.16f * intensity * 255).roundToInt().coerceIn(0, 255), 0, 229, 255)
+                        color = Color.argb((0.16f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
                     }
                     canvas.drawRect(-canvasW * 0.46f + xOff, -canvasH * 0.46f + yOff, canvasW * 0.46f + xOff, canvasH * 0.46f + yOff, p)
                 }
                 EffectKernel.FILM_GRAIN -> {
                     val count = (18 + (detail * 32).toInt()).coerceAtMost(50)
                     val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.argb((0.16f * intensity * 255).roundToInt().coerceIn(0, 255), 255, 255, 255)
+                        color = Color.argb((0.18f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
                     }
                     for (idx in 0 until count) {
                         val gx = (((idx * 73 + (timeMs / 50L).toInt() * 31) % 100) / 100f - 0.5f) * canvasW
@@ -702,7 +814,7 @@ object VideoExporter {
                     val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         style = Paint.Style.STROKE
                         strokeWidth = (1.5f + intensity * 2f) * scaleRef
-                        color = Color.argb((0.22f * intensity * 255).roundToInt().coerceIn(0, 255), 0, 229, 255)
+                        color = Color.argb((0.24f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
                     }
                     canvas.drawCircle(0f, 0f, canvasW * (0.48f - detail * 0.10f), p)
                 }
@@ -712,7 +824,7 @@ object VideoExporter {
                     val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         style = if (isPix) Paint.Style.STROKE else Paint.Style.FILL
                         strokeWidth = 1f
-                        color = Color.argb(((if (isPix) 0.10f else 0.14f) * intensity * 255).roundToInt().coerceIn(0, 255), 255, 255, 255)
+                        color = Color.argb(((if (isPix) 0.10f else 0.16f) * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
                     }
                     var gx = -canvasW * 0.42f
                     while (gx <= canvasW * 0.42f) {
@@ -729,7 +841,7 @@ object VideoExporter {
                     val slices = (4 + (detail * 6).toInt()).coerceIn(2, 10)
                     val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         strokeWidth = 1.5f * scaleRef
-                        color = Color.argb((0.25f * intensity * 255).roundToInt().coerceIn(0, 255), 155, 89, 255)
+                        color = Color.argb((0.25f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
                     }
                     for (i in 0 until slices) {
                         val deg = (180f / slices) * i + timePhase * 15f
@@ -744,7 +856,7 @@ object VideoExporter {
                     val r = canvasW * (0.28f + detail * 0.25f)
                     val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         strokeWidth = 2f * scaleRef
-                        color = Color.argb((0.28f * intensity * 255).roundToInt().coerceIn(0, 255), 255, 179, 0)
+                        color = Color.argb((0.30f * intensity * 255).roundToInt().coerceIn(0, 255), fxR, fxG, fxB)
                     }
                     for (i in 0 until rays) {
                         val a = (i / rays.toFloat()) * 2f * PI.toFloat() + timePhase * 0.5f
@@ -756,8 +868,8 @@ object VideoExporter {
                     for (b in 0 until 5) {
                         val y = (-canvasH * 0.4f) + ((b * 0.2f + (timePhase * 0.2f) % 0.2f) * canvasH)
                         val xShift = sin(timePhase * 5f + b * 2f) * 28f * scaleRef * intensity
-                        val aInt = (0.22f * intensity * 255).roundToInt().coerceIn(0, 255)
-                        p.color = if (b % 2 == 0) Color.argb(aInt, 0, 229, 255) else Color.argb(aInt, 255, 46, 99)
+                        val aInt = (0.24f * intensity * 255).roundToInt().coerceIn(0, 255)
+                        p.color = if (b % 2 == 0) Color.argb(aInt, fxR, fxG, fxB) else Color.argb(aInt, 255, 46, 99)
                         canvas.drawRect(-canvasW * 0.35f + xShift, y, canvasW * 0.35f + xShift, y + (8f + detail * 10f) * scaleRef, p)
                     }
                 }
@@ -1048,13 +1160,39 @@ object VideoExporter {
     private fun decodeUriBitmapArgb8888(context: Context, uriStr: String, sampleSize: Int = 2): Bitmap? {
         val uri = runCatching { Uri.parse(uriStr) }.getOrNull() ?: return null
         return runCatching {
-            val opts = DeviceMediaScanner.transparentBitmapOptions(sampleSize)
-            val stream = if (uri.scheme == "file") {
-                FileInputStream(File(uri.path.orEmpty()))
+            val raw = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val source = if (uri.scheme == "file" && uri.path != null) {
+                    ImageDecoder.createSource(File(uri.path!!))
+                } else {
+                    ImageDecoder.createSource(context.contentResolver, uri)
+                }
+                ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                    if (sampleSize > 1) {
+                        decoder.setTargetSize(
+                            (info.size.width / sampleSize).coerceAtLeast(1),
+                            (info.size.height / sampleSize).coerceAtLeast(1)
+                        )
+                    }
+                }
             } else {
-                context.contentResolver.openInputStream(uri)
+                val opts = DeviceMediaScanner.transparentBitmapOptions(sampleSize)
+                val stream = if (uri.scheme == "file") {
+                    FileInputStream(File(uri.path.orEmpty()))
+                } else {
+                    context.contentResolver.openInputStream(uri)
+                }
+                stream?.use { BitmapFactory.decodeStream(it, null, opts) }
+            } ?: return null
+
+            if (raw.config != Bitmap.Config.ARGB_8888) {
+                raw.copy(Bitmap.Config.ARGB_8888, false)?.also {
+                    it.setHasAlpha(true)
+                    raw.recycle()
+                } ?: raw
+            } else {
+                raw.apply { setHasAlpha(true) }
             }
-            stream?.use { BitmapFactory.decodeStream(it, null, opts) }
         }.getOrNull()
     }
 

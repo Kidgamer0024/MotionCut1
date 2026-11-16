@@ -7,7 +7,7 @@ enum class MusicCategory(val label: String, val description: String) {
     UPBEAT("Upbeat", "High energy, positive, bouncy funk and viral rhythms"),
     CINEMATIC("Cinematic", "Epic orchestral swells, dramatic strings and trailer braams"),
     AMBIENT("Ambient", "Serene atmospheric pads, lofi textures and deep focus"),
-    ELECTRONIC("Electronic", "Cyberpunk basslines, synthwave arps and punchy beats")
+    ELECTRONIC("Electronic", "Electronic basslines, synthwave arps and punchy beats")
 }
 
 data class MusicTrack(

@@ -60,12 +60,15 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Create temporary debug keystore
+      - name: Restore debug keystore
         shell: bash
         run: |
           set -euo pipefail
           if [ -f "./debug.keystore" ]; then
-            echo "Temporary debug keystore check: ./debug.keystore already exists."
+            echo "Debug keystore check: ./debug.keystore already exists."
+          elif [ -f "./debug.keystore.base64" ]; then
+            base64 --decode ./debug.keystore.base64 > ./debug.keystore
+            echo "Restored persistent ./debug.keystore from ./debug.keystore.base64."
           else
             KEYTOOL_BIN="keytool"
             if [ -n "${JAVA_HOME:-}" ] && [ -x "${JAVA_HOME}/bin/keytool" ]; then
@@ -80,16 +83,17 @@ jobs:
               -keyalg RSA \
               -keysize 2048 \
               -validity 10000 >/dev/null 2>&1 || {
-                echo "::error::Failed to create temporary debug keystore at ./debug.keystore."
+                echo "::error::Failed to create fallback debug keystore at ./debug.keystore."
                 exit 1
               }
+            echo "::warning::debug.keystore.base64 was missing; generated a fallback debug keystore."
           fi
 
-          if [ ! -f "./debug.keystore" ]; then
-            echo "::error::Expected ./debug.keystore does not exist after generation."
+          if [ ! -f "./debug.keystore" ] || [ ! -s "./debug.keystore" ]; then
+            echo "::error::Expected ./debug.keystore is missing or empty."
             exit 1
           fi
-          echo "Temporary debug keystore verified."
+          echo "Debug keystore verified."
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace --no-daemon
@@ -196,7 +200,7 @@ jobs:
           - **Workflow Run Number:** ${GITHUB_RUN_NUMBER}
           - **Workflow Run Attempt:** ${GITHUB_RUN_ATTEMPT}
           - **Source Commit SHA:** ${GITHUB_SHA}
-          - **Notice:** This APK is intended for testing only. It is not a Play Store production release and is signed only with a temporary debug keystore.
+          - **Notice:** This APK is intended for testing only. It is signed with the project's consistent debug keystore (`debug.keystore.base64`).
           EOF
 
           gh release create "$RELEASE_TAG" "$ASSET_PATH" \

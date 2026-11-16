@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -46,6 +48,7 @@ import com.example.ui.theme.MotionCyan
 import com.example.ui.theme.StudioBorder
 import com.example.ui.theme.StudioDarkBg
 import com.example.ui.theme.StudioSurfaceVariant
+import java.util.Locale
 
 @Composable
 fun EffectsStackEditor(
@@ -153,7 +156,15 @@ private fun EffectCard(
     onUpdate: (VideoEffect) -> Unit,
     onDelete: () -> Unit
 ) {
-    val accent = effect.suite?.let { Color(it.accentHex) } ?: MotionCyan
+    val accent = if (effect.colorHex != 0L) Color(effect.colorHex) else (effect.suite?.let { Color(it.accentHex) } ?: MotionCyan)
+    val fxColorSwatches = listOf(
+        0xFF00E5FFL,
+        0xFFFFB020L,
+        0xFFD580FFL,
+        0xFF10E878L,
+        0xFFFF4D6DL,
+        0xFFFFFFFFL
+    )
 
     Surface(
         modifier = Modifier
@@ -230,7 +241,7 @@ private fun EffectCard(
                 value = effect.speed,
                 range = 0.1f..3.0f,
                 accent = accent,
-                display = String.format("%.1fx", effect.speed),
+                display = String.format(Locale.US, "%.1fx", effect.speed),
                 onValueChange = { onUpdate(effect.copy(speed = it)) }
             )
 
@@ -243,6 +254,36 @@ private fun EffectCard(
                 display = "${(effect.paramA * 100).toInt()}%",
                 onValueChange = { onUpdate(effect.copy(paramA = it)) }
             )
+
+            // FX Tint Color Swatches
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Color",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray,
+                    fontSize = 10.sp,
+                    modifier = Modifier.size(width = 56.dp, height = 14.dp)
+                )
+                fxColorSwatches.forEach { hex ->
+                    val isSelectedColor = effect.colorHex == hex
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(hex),
+                        border = if (isSelectedColor) BorderStroke(2.dp, Color.White) else BorderStroke(1.dp, StudioBorder),
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .clickable { onUpdate(effect.copy(colorHex = hex)) }
+                            .testTag("fx_color_${effect.id}_${hex.toString(16)}")
+                    ) {}
+                }
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -65,6 +66,7 @@ import com.example.ui.theme.PlayheadAmber
 import com.example.ui.theme.StudioBorder
 import com.example.ui.theme.StudioDarkBg
 import com.example.ui.theme.StudioSurfaceVariant
+import java.util.Locale
 
 @Composable
 fun MaskingToolEditor(
@@ -240,7 +242,9 @@ fun MaskingToolEditor(
                         ) {
                             val icon = when (shapeType) {
                                 MaskShapeType.RECTANGLE -> Icons.Default.CropSquare
-                                MaskShapeType.ELLIPSE, MaskShapeType.RADIAL_VIGNETTE -> Icons.Default.RadioButtonUnchecked
+                                MaskShapeType.CIRCLE,
+                                MaskShapeType.ELLIPSE,
+                                MaskShapeType.RADIAL_VIGNETTE -> Icons.Default.RadioButtonUnchecked
                                 else -> Icons.Default.Polyline
                             }
                             Icon(icon, contentDescription = null, tint = if (isSel) MotionCyan else Color.Gray, modifier = Modifier.size(14.dp))
@@ -257,11 +261,11 @@ fun MaskingToolEditor(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Controls: Invert Toggle & Feather & Delete
+            // Controls: Invert Toggle, Feather, Position, Width/Height, Corner Radius, Expand, Opacity, Border
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(190.dp)
+                    .weight(1f)
             ) {
                 item {
                     Row(
@@ -307,7 +311,7 @@ fun MaskingToolEditor(
                     )
                 }
 
-                // Mask Scale / Expansion
+                // Mask Scale
                 item {
                     MaskSliderRow(
                         label = "Scale",
@@ -316,6 +320,126 @@ fun MaskingToolEditor(
                         unit = "x",
                         onValueChange = { onUpdateMask(selectedMask.copy(scaleX = it, scaleY = it)) }
                     )
+                }
+
+                // Mask Offset X & Y
+                item {
+                    MaskSliderRow(
+                        label = "Pos X",
+                        value = selectedMask.positionX,
+                        valueRange = -250f..250f,
+                        unit = "px",
+                        onValueChange = { onUpdateMask(selectedMask.copy(positionX = it)) }
+                    )
+                }
+                item {
+                    MaskSliderRow(
+                        label = "Pos Y",
+                        value = selectedMask.positionY,
+                        valueRange = -350f..350f,
+                        unit = "px",
+                        onValueChange = { onUpdateMask(selectedMask.copy(positionY = it)) }
+                    )
+                }
+
+                // Aspect Width & Height
+                if (selectedMask.shapeType != MaskShapeType.CIRCLE && selectedMask.shapeType != MaskShapeType.LINEAR_SPLIT) {
+                    item {
+                        MaskSliderRow(
+                            label = "Width",
+                            value = selectedMask.aspectWidth,
+                            valueRange = 0.25f..2.5f,
+                            unit = "x",
+                            onValueChange = { onUpdateMask(selectedMask.copy(aspectWidth = it)) }
+                        )
+                    }
+                    item {
+                        MaskSliderRow(
+                            label = "Height",
+                            value = selectedMask.aspectHeight,
+                            valueRange = 0.25f..2.5f,
+                            unit = "x",
+                            onValueChange = { onUpdateMask(selectedMask.copy(aspectHeight = it)) }
+                        )
+                    }
+                }
+
+                // Corner Radius for Rectangle mask
+                if (selectedMask.shapeType == MaskShapeType.RECTANGLE) {
+                    item {
+                        MaskSliderRow(
+                            label = "Corner",
+                            value = selectedMask.cornerRadiusPx,
+                            valueRange = 0f..160f,
+                            unit = "px",
+                            onValueChange = { onUpdateMask(selectedMask.copy(cornerRadiusPx = it)) }
+                        )
+                    }
+                }
+
+                // Expansion Slider
+                item {
+                    MaskSliderRow(
+                        label = "Expand",
+                        value = selectedMask.expansion,
+                        valueRange = -100f..100f,
+                        unit = "px",
+                        onValueChange = { onUpdateMask(selectedMask.copy(expansion = it)) }
+                    )
+                }
+
+                // Opacity Slider
+                item {
+                    MaskSliderRow(
+                        label = "Opacity",
+                        value = selectedMask.opacity * 100f,
+                        valueRange = 0f..100f,
+                        unit = "%",
+                        onValueChange = { onUpdateMask(selectedMask.copy(opacity = (it / 100f).coerceIn(0f, 1f))) }
+                    )
+                }
+
+                // Border Width & Color Swatches
+                item {
+                    MaskSliderRow(
+                        label = "Border",
+                        value = selectedMask.borderWidthPx,
+                        valueRange = 0f..24f,
+                        unit = "px",
+                        onValueChange = { onUpdateMask(selectedMask.copy(borderWidthPx = it)) }
+                    )
+                }
+
+                item {
+                    val borderSwatches = listOf(0xFFFFFFFFL, 0xFF00E5FFL, 0xFFFFB020L, 0xFF10E878L, 0xFFFF4D6DL, 0xFF000000L)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Stroke",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.LightGray,
+                            fontSize = 11.sp,
+                            modifier = Modifier.width(65.dp)
+                        )
+                        borderSwatches.forEach { hex ->
+                            val selectedColor = selectedMask.borderColorHex == hex
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(hex),
+                                border = if (selectedColor) BorderStroke(2.dp, MotionCyan) else BorderStroke(1.dp, StudioBorder),
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .clickable { onUpdateMask(selectedMask.copy(borderColorHex = hex)) }
+                                    .testTag("mask_border_color_${hex.toString(16)}")
+                            ) {}
+                        }
+                    }
                 }
 
                 // Mask Rotation
@@ -397,8 +521,13 @@ private fun MaskSliderRow(
             ),
             modifier = Modifier.weight(1f)
         )
+        val formatted = if (unit == "x") {
+            String.format(Locale.US, "%.2fx", value)
+        } else {
+            "${value.toInt()}$unit"
+        }
         Text(
-            text = "${value.toInt()}$unit",
+            text = formatted,
             style = MaterialTheme.typography.labelSmall,
             color = MotionCyan,
             modifier = Modifier.size(width = 44.dp, height = 18.dp),

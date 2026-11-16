@@ -27,17 +27,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Storefront
-import androidx.compose.material.icons.filled.Timeline
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -67,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AnimatableProperty
 import com.example.model.AspectRatio
 import com.example.model.ColorGradingSettings
 import com.example.model.ExportResolution
@@ -75,7 +69,6 @@ import com.example.ui.EditorToolTab
 import com.example.ui.EditorViewModel
 import com.example.ui.components.Add3DModelDialog
 import com.example.ui.components.AddLayerDialog
-import com.example.ui.components.AiStudioModal
 import com.example.ui.components.CameraTrackerPanel
 import com.example.ui.components.ClipSpeedPanel
 import com.example.ui.components.ColorGradingMainPanel
@@ -86,11 +79,8 @@ import com.example.ui.components.EffectsStackEditor
 import com.example.ui.components.ExportRenderDialog
 import com.example.ui.components.KeyframeGraphEditor
 import com.example.ui.components.LayoutConfigDialog
-import com.example.ui.components.LibraryHubDialog
-import com.example.ui.components.MarketplaceSheet
 import com.example.ui.components.MaskingToolEditor
 import com.example.ui.components.Model3DEditorPanel
-import com.example.ui.components.MusicLibrarySheet
 import com.example.ui.components.ScopesVisualizer
 import com.example.ui.components.SplitIntoPartsDialog
 import com.example.ui.components.TextEditorPanel
@@ -135,21 +125,12 @@ fun EditorScreen(
     val showAddLayerDialog by viewModel.showAddLayerDialog.collectAsState()
     val showProjectPicker by viewModel.showProjectPicker.collectAsState()
 
-    val showMarketplaceSheet by viewModel.showMarketplaceSheet.collectAsState()
-    val showMusicLibrarySheet by viewModel.showMusicLibrarySheet.collectAsState()
-    val marketplaceItems by viewModel.marketplaceItems.collectAsState()
-    val musicTracks by viewModel.musicTracks.collectAsState()
     val isPlayingMusicPreview by viewModel.audioSynthesizerEngine.isPlayingPreview.collectAsState()
     val currentMusicPreviewTrackId by viewModel.audioSynthesizerEngine.currentTrackId.collectAsState()
-    val musicPreviewProgress by viewModel.audioSynthesizerEngine.previewProgress.collectAsState()
 
-    val showAiStudioModal by viewModel.showAiStudioModal.collectAsState()
-    val aiStudioInitialTab by viewModel.aiStudioInitialTab.collectAsState()
     val isAiProcessing by viewModel.isAiProcessing.collectAsState()
     val aiStatusMessage by viewModel.aiStatusMessage.collectAsState()
-    val aiSuccessFeedback by viewModel.aiSuccessFeedback.collectAsState()
 
-    val showLibraryHubSheet by viewModel.showLibraryHubSheet.collectAsState()
     val showEffectLibrarySheet by viewModel.showEffectLibrarySheet.collectAsState()
     val favoriteEffectIds by viewModel.favoriteEffectIds.collectAsState()
     val showLayoutDialog by viewModel.showLayoutDialog.collectAsState()
@@ -192,15 +173,12 @@ fun EditorScreen(
                 onOptionClick = { option ->
                     when (option) {
                         EditorDockOption.ADD -> viewModel.setShowAddLayer(true)
-                        EditorDockOption.AI -> viewModel.openAiStudioAtTab(0)
-                        EditorDockOption.LIBRARY -> viewModel.setShowLibraryHub(true)
-                        EditorDockOption.CAPTIONS -> viewModel.openAiStudioAtTab(2)
                         EditorDockOption.LINK -> viewModel.toggleSelectedClipLink()
                         EditorDockOption.LAYOUT -> viewModel.setShowLayoutDialog(true)
-                        EditorDockOption.REMOVE_BG -> viewModel.applyQuickRemoveBg()
+                        EditorDockOption.REMOVE_BG -> viewModel.applyQuickRemoveBg(context)
                         EditorDockOption.SPLIT_PARTS -> viewModel.setShowSplitPartsDialog(true)
                         EditorDockOption.UPSCALE -> viewModel.setShowUpscaleDialog(true)
-                        EditorDockOption.COLORIZE -> viewModel.openAiStudioAtTab(1)
+                        EditorDockOption.COLORIZE -> viewModel.setToolTab(EditorToolTab.COLOR_GRADING)
                         EditorDockOption.DEPTH_CLOUD -> viewModel.applyCloudDepthPass()
                     }
                 }
@@ -366,7 +344,7 @@ fun EditorScreen(
                         }
                     }
 
-                    // Secondary Scrollable Studio Hub Strip (AI Magic, Voice, Market, Music, Specs)
+                    // Secondary Studio Action Strip (Voice, Specs)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -375,24 +353,6 @@ fun EditorScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Surface(
-                            color = MotionCyan.copy(alpha = 0.18f),
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MotionCyan.copy(alpha = 0.7f)),
-                            modifier = Modifier
-                                .clickable { viewModel.setShowAiStudioModal(true) }
-                                .testTag("open_ai_studio_button")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MotionCyan, modifier = Modifier.size(13.dp))
-                                Text("AI Magic", color = MotionCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
                         Surface(
                             color = CutRose.copy(alpha = 0.18f),
                             shape = RoundedCornerShape(6.dp),
@@ -408,42 +368,6 @@ fun EditorScreen(
                             ) {
                                 Icon(Icons.Default.Mic, contentDescription = null, tint = CutRose, modifier = Modifier.size(13.dp))
                                 Text("Voice", color = CutRose, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        Surface(
-                            color = KeyframeViolet.copy(alpha = 0.18f),
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, KeyframeViolet.copy(alpha = 0.6f)),
-                            modifier = Modifier
-                                .clickable { viewModel.setShowMarketplace(true) }
-                                .testTag("open_marketplace_button")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(Icons.Default.Storefront, contentDescription = null, tint = KeyframeViolet, modifier = Modifier.size(13.dp))
-                                Text("Market", color = KeyframeViolet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        Surface(
-                            color = PlayheadAmber.copy(alpha = 0.18f),
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, PlayheadAmber.copy(alpha = 0.6f)),
-                            modifier = Modifier
-                                .clickable { viewModel.setShowMusicLibrary(true) }
-                                .testTag("open_music_library_button")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(Icons.Default.MusicNote, contentDescription = null, tint = PlayheadAmber, modifier = Modifier.size(13.dp))
-                                Text("Music", color = PlayheadAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
@@ -573,7 +497,13 @@ fun EditorScreen(
                             onSplitClip = { id, time -> viewModel.splitClip(id, time) },
                             onDuplicateClip = { id -> viewModel.duplicateClip(id) },
                             onDeleteClip = { id -> viewModel.deleteClip(id) },
-                            onToggleKeyframe = { viewModel.toggleKeyframeOnSelectedClip() },
+                            onToggleKeyframe = {
+                                if (activeProperty == AnimatableProperty.POSITION_X || activeProperty == AnimatableProperty.POSITION_Y) {
+                                    viewModel.toggleMoveKeyframe()
+                                } else {
+                                    viewModel.toggleKeyframeOnSelectedClip()
+                                }
+                            },
                             onAddClipRequested = { viewModel.setShowAddLayer(true) },
                             onRecordVoiceOverRequested = { viewModel.setShowVoiceOverSheet(true) },
                             modifier = Modifier.fillMaxSize()
@@ -597,6 +527,18 @@ fun EditorScreen(
                                 onUpdateValue = { prop, newVal ->
                                     viewModel.updatePropertyValue(prop, newVal)
                                 },
+                                onToggleMoveKeyframe = { viewModel.toggleMoveKeyframe() },
+                                onDeleteMoveKeyframeAtTime = { targetTimeMs ->
+                                    viewModel.seek(targetTimeMs)
+                                    viewModel.deleteMoveKeyframeAtPlayhead()
+                                },
+                                onClearMoveKeyframes = { viewModel.clearMoveKeyframes() },
+                                onUpdateMoveEasing = { relTimeMs, easing ->
+                                    viewModel.updateMoveKeyframeEasing(relTimeMs, easing)
+                                },
+                                onUpdateMoveValues = { x, y ->
+                                    viewModel.setMovePosition(x, y)
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
@@ -616,7 +558,7 @@ fun EditorScreen(
                         TextEditorPanel(
                             selectedClip = selectedClip,
                             onUpdateTextConfig = { viewModel.updateClipTextConfig(it) },
-                            onOpenAddTextModal = { viewModel.setShowAddLayer(true) },
+                            onOpenAddTextModal = { viewModel.addQuickTextLayer() },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -749,9 +691,9 @@ fun EditorScreen(
                 }
             }
 
-            // Floating AI Processing HUD (for bottom bar quick AI triggers like Remove BG & Depth Cloud)
+            // Floating Processing HUD (Remove BG & Depth Cloud)
             AnimatedVisibility(
-                visible = isAiProcessing && !showAiStudioModal && !showUpscaleDialog,
+                visible = isAiProcessing && !showUpscaleDialog,
                 enter = fadeIn() + slideInVertically(initialOffsetY = { -20 }),
                 exit = fadeOut() + slideOutVertically(targetOffsetY = { -20 }),
                 modifier = Modifier
@@ -775,7 +717,7 @@ fun EditorScreen(
                             color = MotionCyan
                         )
                         Text(
-                            text = aiStatusMessage ?: "Processing with Gemini AI...",
+                            text = aiStatusMessage ?: "Processing effect...",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White,
                             fontSize = 11.sp,
@@ -826,65 +768,6 @@ fun EditorScreen(
                 onSelectProject = { viewModel.selectProject(it) },
                 onCreateProject = { title, ratio -> viewModel.createProject(title, ratio) },
                 onDismiss = { viewModel.setShowProjectPicker(false) }
-            )
-        }
-
-        if (showMarketplaceSheet) {
-            MarketplaceSheet(
-                items = marketplaceItems,
-                onDownloadItem = { viewModel.downloadAndApplyMarketplaceItem(it) },
-                onAddReview = { itemId, review -> viewModel.addMarketplaceReview(itemId, review) },
-                onPublishCreation = { viewModel.publishCreation(it) },
-                onDismiss = { viewModel.setShowMarketplace(false) }
-            )
-        }
-
-        if (showMusicLibrarySheet) {
-            MusicLibrarySheet(
-                tracks = musicTracks,
-                isPlayingPreview = isPlayingMusicPreview,
-                currentPreviewTrackId = currentMusicPreviewTrackId,
-                previewProgress = musicPreviewProgress,
-                onPlayPreview = { viewModel.playMusicPreview(it) },
-                onStopPreview = { viewModel.stopMusicPreview() },
-                onImportTrack = { viewModel.importMusicTrackToTimeline(it) },
-                onDismiss = { viewModel.setShowMusicLibrary(false) }
-            )
-        }
-
-        if (showAiStudioModal) {
-            AiStudioModal(
-                selectedClip = selectedClip ?: resolvedTargetClip,
-                initialTab = aiStudioInitialTab,
-                isProcessing = isAiProcessing,
-                statusMessage = aiStatusMessage,
-                successFeedback = aiSuccessFeedback,
-                onApplyCutout = { clipId, sub, mode, f, exp ->
-                    viewModel.applyAiCutout(clipId, sub, mode, f, exp)
-                },
-                onApplyColorGrade = { clipId, mood ->
-                    viewModel.applyAiColorGrade(clipId, mood)
-                },
-                onApplyCaptions = { desc, style ->
-                    viewModel.applyAiCaptions(desc, style)
-                },
-                onClearFeedback = { viewModel.clearAiFeedback() },
-                onDismiss = { viewModel.setShowAiStudioModal(false) }
-            )
-        }
-
-        if (showLibraryHubSheet) {
-            val mainTrackId = project.tracks.find { it.type == TrackType.MAIN_VIDEO }?.id
-                ?: project.tracks.firstOrNull()?.id
-                ?: "track_main_video"
-            LibraryHubDialog(
-                mainVideoTrackId = mainTrackId,
-                currentTimeMs = currentTimeMs,
-                onOpenMarketplace = { viewModel.setShowMarketplace(true) },
-                onOpenMusicLibrary = { viewModel.setShowMusicLibrary(true) },
-                onOpenEffectLibrary = { viewModel.setShowEffectLibrary(true) },
-                onInsertStockClip = { clip -> viewModel.addClip(clip) },
-                onDismiss = { viewModel.setShowLibraryHub(false) }
             )
         }
 

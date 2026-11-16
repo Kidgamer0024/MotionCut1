@@ -359,7 +359,7 @@ class MotionCutTest {
         assertTrue(firstProject.updatedAt > 0)
 
         // 2. Rename existing project in Room
-        val renamedTitle = "Cyberpunk Neo-Tokyo 2077"
+        val renamedTitle = "Studio Timeline Cut"
         val newTimestamp = System.currentTimeMillis() + 1000L
         dao.renameProject(firstProject.id, renamedTitle, newTimestamp)
 
@@ -756,7 +756,7 @@ class MotionCutTest {
         assertEquals("Curated preset IDs must be distinct", all.size, all.map { it.id }.distinct().size)
 
         val rgbMatches = com.example.data.EffectCatalog.filterPresets(
-            category = "Glitch & RGB",
+            category = "Filter",
             query = "Chromatic"
         )
         assertTrue(rgbMatches.isNotEmpty())
@@ -1040,7 +1040,7 @@ class MotionCutTest {
                 textureMix = 0.72f
             ),
             textConfig = com.example.model.TextConfig(
-                text = "CYBER TITLE",
+                text = "MOTION TITLE",
                 fontChoice = com.example.model.TextFontChoice.CINZEL,
                 animationType = com.example.model.TextAnimationType.GLITCH_FLICKER,
                 hasBackgroundPill = true
@@ -1149,6 +1149,197 @@ class MotionCutTest {
         val xKfs = tracked.keyframeTracks[AnimatableProperty.POSITION_X]?.keyframes.orEmpty()
         assertEquals(3, xKfs.size)
         assertTrue(xKfs.last().value > 5f)
+    }
+
+    @Test
+    fun testEffectCatalogCategoriesAndColorCustomization() {
+        assertEquals(
+            listOf("All", "Background", "Blur", "Lighting", "Filter", "Other"),
+            com.example.data.EffectCatalog.categories
+        )
+        com.example.data.EffectCatalog.allPresets.forEach { preset ->
+            assertFalse("Unexpected 'cyber' in ${preset.name}", preset.name.contains("cyber", ignoreCase = true))
+            assertFalse("Unexpected 'neon' in ${preset.name}", preset.name.contains("neon", ignoreCase = true))
+            assertFalse("Unexpected 'cyber' in ${preset.description}", preset.description.contains("cyber", ignoreCase = true))
+            assertFalse("Unexpected 'neon' in ${preset.description}", preset.description.contains("neon", ignoreCase = true))
+        }
+
+        val vm = com.example.ui.EditorViewModel(repository = ProjectRepository(seedSampleProjects = true))
+        val firstClip = vm.currentProject.value.tracks.first().clips.first()
+        vm.selectClip(firstClip.id)
+        val preset = com.example.data.EffectCatalog.allPresets.first()
+        vm.addEffectPreset(preset)
+        val addedFx = vm.currentProject.value.findClip(firstClip.id)!!.effects.last()
+        vm.updateEffect(
+            addedFx.copy(
+                intensity = 0.8f,
+                speed = 1.2f,
+                paramA = 0.5f,
+                paramB = 0.5f,
+                colorHex = 0xFFFF2A85
+            )
+        )
+        val updatedFx = vm.currentProject.value.findClip(firstClip.id)!!.effects.last()
+        assertEquals(0xFFFF2A85, updatedFx.colorHex)
+    }
+
+    @Test
+    fun testUnlimitedMultiLineExtruded3DText() {
+        val longText = "MOTION STUDIO 3D\nPRO CREATOR EDITION 2026"
+        assertTrue(longText.length > 20)
+        val mesh = com.example.engine.Mesh3DParser.buildExtrudedTextMesh(longText, 0.45f)
+        assertTrue(mesh.vertices.isNotEmpty())
+        assertTrue(mesh.faces.isNotEmpty())
+
+        val cfg = com.example.model.Model3DConfig(
+            source = com.example.model.Model3DSource.EXTRUDED_TEXT,
+            extrudedText = longText
+        )
+        assertEquals(longText, cfg.extrudedText)
+    }
+
+    @Test
+    fun testMaskingCircleCornerBorderAndAspectCustomization() {
+        val circleMask = MaskConfig(
+            id = "circle_mask_1",
+            shapeType = MaskShapeType.CIRCLE,
+            positionX = 12f,
+            positionY = -18f,
+            aspectWidth = 1.4f,
+            aspectHeight = 0.8f,
+            cornerRadiusPx = 28f,
+            opacity = 0.75f,
+            borderWidthPx = 6f,
+            borderColorHex = 0xFFFF4D6D
+        )
+        val evaluated = MaskCompositor.evaluateMask(
+            mask = circleMask,
+            currentTimeMs = 500L,
+            clipStartTimeMs = 0L,
+            clipWidth = 400f,
+            clipHeight = 400f
+        )
+        assertEquals(12f, evaluated.positionX, 0.01f)
+        assertEquals(-18f, evaluated.positionY, 0.01f)
+        assertEquals(0.75f, evaluated.opacity, 0.01f)
+        assertEquals(6f, evaluated.borderWidthPx, 0.01f)
+        assertEquals(0xFFFF4D6D, evaluated.borderColorHex)
+        assertFalse(evaluated.path.isEmpty)
+    }
+
+    @Test
+    fun testUnifiedMoveKeyframePairingAndDeletion() {
+        val repo = ProjectRepository()
+        val clip = com.example.model.ClipItem(
+            id = "move_clip",
+            trackId = "",
+            title = "Layer",
+            startTimeMs = 0L,
+            durationMs = 4000L
+        )
+        repo.addClipToTrack("", clip)
+
+        // Toggling Move adds keyframes to both POSITION_X and POSITION_Y
+        val added = repo.toggleMoveKeyframe("move_clip", 0L, currentX = 10f, currentY = -20f)
+        assertTrue(added)
+        repo.setMoveValues("move_clip", 1500L, posX = 110f, posY = 80f)
+
+        val midEval = KeyframeEvaluator.evaluateClipTransform(repo.currentProject.value.findClip("move_clip")!!, 750L)
+        assertEquals(60f, midEval.positionX, 2f)
+        assertEquals(30f, midEval.positionY, 2f)
+
+        // Delete Move keyframe at 1500ms removes both X and Y keyframes at that timestamp
+        repo.deleteMoveKeyframeAtTime("move_clip", 1500L)
+        val afterDelete = repo.currentProject.value.findClip("move_clip")!!
+        assertEquals(1, afterDelete.keyframeTracks[AnimatableProperty.POSITION_X]?.keyframes?.size)
+        assertEquals(1, afterDelete.keyframeTracks[AnimatableProperty.POSITION_Y]?.keyframes?.size)
+
+        repo.clearMoveKeyframes("move_clip")
+        val afterClear = repo.currentProject.value.findClip("move_clip")!!
+        assertFalse(afterClear.keyframeTracks.containsKey(AnimatableProperty.POSITION_X))
+        assertFalse(afterClear.keyframeTracks.containsKey(AnimatableProperty.POSITION_Y))
+    }
+
+    @Test
+    fun testAutoBackgroundRemoverPreservesForegroundAndStripsBorder() {
+        val bmp = android.graphics.Bitmap.createBitmap(16, 16, android.graphics.Bitmap.Config.ARGB_8888)
+        // White uniform background with opaque red center square
+        for (y in 0 until 16) {
+            for (x in 0 until 16) {
+                val isCenter = x in 5..10 && y in 5..10
+                bmp.setPixel(x, y, if (isCenter) android.graphics.Color.RED else android.graphics.Color.WHITE)
+            }
+        }
+        val cutout = com.example.engine.AutoBackgroundRemover.stripBorderBackground(bmp)
+        assertEquals(0, android.graphics.Color.alpha(cutout.getPixel(0, 0)))
+        assertEquals(255, android.graphics.Color.alpha(cutout.getPixel(8, 8)))
+        bmp.recycle()
+        if (cutout !== bmp) cutout.recycle()
+    }
+
+    @Test
+    fun testStillImageOverlayRoutingAndQuickTextLayer() {
+        val repo = ProjectRepository()
+        val vm = com.example.ui.EditorViewModel(repository = repo)
+
+        // Main video first
+        vm.addClip(
+            com.example.model.ClipItem(
+                id = "main_v1",
+                trackId = "",
+                title = "Scene.mp4",
+                type = com.example.model.ClipType.VIDEO_SAMPLE,
+                mediaUri = "content://media/video/1",
+                startTimeMs = 0L,
+                durationMs = 5000L
+            )
+        )
+        // Transparent PNG overlapping main video should auto-route to OVERLAY track
+        vm.addClip(
+            com.example.model.ClipItem(
+                id = "png_overlay",
+                trackId = "",
+                title = "badge.png",
+                type = com.example.model.ClipType.VIDEO_SAMPLE,
+                mediaUri = "file:///tmp/badge.png",
+                startTimeMs = 500L,
+                durationMs = 4000L
+            )
+        )
+        val overlayTrack = vm.currentProject.value.tracks.find { it.type == com.example.model.TrackType.OVERLAY }
+        assertNotNull(overlayTrack)
+        assertTrue(overlayTrack!!.clips.any { it.id == "png_overlay" })
+
+        // One-tap addQuickTextLayer creates a selectable TEXT clip and switches to TEXT tab
+        vm.addQuickTextLayer()
+        val textTrack = vm.currentProject.value.tracks.find { it.type == com.example.model.TrackType.TEXT_STICKER }
+        assertNotNull(textTrack)
+        assertTrue(textTrack!!.clips.any { it.type == com.example.model.ClipType.TEXT })
+        assertEquals(com.example.ui.EditorToolTab.TEXT, vm.activeToolTab.value)
+    }
+
+    @Test
+    fun testMergeFromCloudPreservesLocalProjectsAndDeletedIds() = runBlocking {
+        val repo = ProjectRepository()
+        val localOnly = com.example.model.Project(id = "local_only", title = "Local Edit", updatedAt = 200L)
+        val deletedLocal = com.example.model.Project(id = "deleted_id", title = "Old Edit", updatedAt = 100L)
+        repo.createNewProject(localOnly)
+        repo.createNewProject(deletedLocal)
+        repo.deleteProject("deleted_id")
+
+        val cloudProj = com.example.model.Project(id = "cloud_proj", title = "Cloud Edit", updatedAt = 300L)
+        val staleDeletedFromCloud = com.example.model.Project(id = "deleted_id", title = "Old Edit", updatedAt = 150L)
+
+        repo.mergeFromCloud(
+            listOf(
+                ProjectMappers.toEntity(cloudProj),
+                ProjectMappers.toEntity(staleDeletedFromCloud)
+            )
+        )
+        val ids = repo.projects.value.map { it.id }.toSet()
+        assertTrue("Expected local_only preserved", "local_only" in ids)
+        assertTrue("Expected cloud_proj merged", "cloud_proj" in ids)
+        assertFalse("Expected deleted_id suppressed", "deleted_id" in ids)
     }
 }
 

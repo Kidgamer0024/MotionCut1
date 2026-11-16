@@ -59,7 +59,7 @@ object TextStyleRegistry {
         ),
         TextTemplatePreset(
             id = "tpl_cyber_glitch",
-            name = "Cyber Glitch HUD",
+            name = "HUD Scan Glitch",
             category = "Tech",
             badge = "FX",
             config = TextConfig(

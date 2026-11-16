@@ -31,7 +31,7 @@ import kotlin.math.sqrt
  */
 object Mesh3DParser {
 
-    private const val MAX_FACES = 6000
+    private const val MAX_FACES = 24000
     private val meshCache = ConcurrentHashMap<String, Mesh3DData>()
 
     fun registerCustomMesh(key: String, mesh: Mesh3DData) {
@@ -55,7 +55,7 @@ object Mesh3DParser {
                 }
             }
             Model3DSource.EXTRUDED_TEXT -> {
-                val safeText = config.extrudedText.ifBlank { "3D" }.take(16)
+                val safeText = config.extrudedText.ifBlank { "3D" }
                 val cacheKey = "txt_${safeText}_${(evaluatedExtrusion * 20).toInt()}"
                 meshCache.getOrPut(cacheKey) {
                     buildExtrudedTextMesh(safeText, evaluatedExtrusion)
@@ -644,32 +644,67 @@ object Mesh3DParser {
      * allowing real 3D rotation, depth extrusion, lighting, and wireframes.
      */
     fun buildExtrudedTextMesh(text: String, extrusionDepth: Float): Mesh3DData {
-        val upper = text.uppercase().ifBlank { "3D" }.take(10)
+        val rawUpper = text.uppercase().ifBlank { "3D" }
+        val maxCharsPerLine = 12
+        val wrappedLines = rawUpper.lines().flatMap { paragraph ->
+            val trimmed = paragraph.trim()
+            if (trimmed.isEmpty()) listOf("")
+            else if (trimmed.length <= maxCharsPerLine) listOf(trimmed)
+            else {
+                val out = mutableListOf<String>()
+                var curLine = StringBuilder()
+                for (word in trimmed.split(' ')) {
+                    if (word.length > maxCharsPerLine) {
+                        if (curLine.isNotEmpty()) {
+                            out.add(curLine.toString())
+                            curLine = StringBuilder()
+                        }
+                        word.chunked(maxCharsPerLine).forEach { out.add(it) }
+                    } else if (curLine.isEmpty()) {
+                        curLine.append(word)
+                    } else if (curLine.length + 1 + word.length <= maxCharsPerLine) {
+                        curLine.append(' ').append(word)
+                    } else {
+                        out.add(curLine.toString())
+                        curLine = StringBuilder(word)
+                    }
+                }
+                if (curLine.isNotEmpty()) out.add(curLine.toString())
+                out
+            }
+        }.ifEmpty { listOf("3D") }
+
         val verts = ArrayList<Vec3>()
         val faces = ArrayList<Face3D>()
         val cellW = 0.08f
         val cellH = 0.09f
         val hz = (0.04f + extrusionDepth * 0.24f).coerceIn(0.03f, 0.55f)
         val glyphSpacing = 4.2f * cellW
-        val totalW = upper.length * glyphSpacing
+        val lineSpacing = 6.8f * cellH
+        val totalLines = wrappedLines.size
+        val startLineY = -((totalLines - 1) * lineSpacing) * 0.5f
 
-        upper.forEachIndexed { charIdx, ch ->
-            val rows = GLYPH_3X5[ch] ?: GLYPH_3X5['?']!!
-            val originX = -totalW * 0.5f + charIdx * glyphSpacing + cellW * 0.5f
-            for (r in rows.indices) {
-                val mask = rows[r]
-                for (c in 0 until 3) {
-                    if (((mask shr (2 - c)) and 1) == 1) {
-                        val cx = originX + c * cellW
-                        val cy = (r - 2) * cellH
-                        appendBox(verts, faces, cx, cy, cellW * 0.48f, cellH * 0.48f, hz)
+        wrappedLines.forEachIndexed { lineIdx, lineStr ->
+            val lineW = lineStr.length * glyphSpacing
+            val lineCenterY = startLineY + lineIdx * lineSpacing
+            lineStr.forEachIndexed { charIdx, ch ->
+                val rows = GLYPH_3X5[ch] ?: GLYPH_3X5['?']!!
+                val originX = -lineW * 0.5f + charIdx * glyphSpacing + cellW * 0.5f
+                for (r in rows.indices) {
+                    val mask = rows[r]
+                    for (c in 0 until 3) {
+                        if (((mask shr (2 - c)) and 1) == 1) {
+                            val cx = originX + c * cellW
+                            val cy = lineCenterY + (r - 2) * cellH
+                            appendBox(verts, faces, cx, cy, cellW * 0.48f, cellH * 0.48f, hz)
+                        }
                     }
                 }
             }
         }
 
         if (verts.isEmpty()) return buildPrimitiveMesh(Primitive3DShape.CUBE, extrusionDepth)
-        return normalizeMesh(Mesh3DData(verts, faces, "3D Text: $upper"))
+        return normalizeMesh(Mesh3DData(verts, faces, "3D Text: $rawUpper"))
     }
 
     private fun appendBox(

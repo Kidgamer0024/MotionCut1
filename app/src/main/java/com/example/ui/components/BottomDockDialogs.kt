@@ -226,7 +226,7 @@ fun LibraryHubDialog(
                                 ClipItem(
                                     id = UUID.randomUUID().toString(),
                                     trackId = mainVideoTrackId,
-                                    title = "Neon Cyber B-Roll",
+                                    title = "Studio Backdrop B-Roll",
                                     type = ClipType.COLOR_BG,
                                     colorHex = 0xFF0A2E47,
                                     startTimeMs = currentTimeMs,
@@ -244,7 +244,7 @@ fun LibraryHubDialog(
                     ) {
                         Icon(Icons.Default.Layers, contentDescription = null, tint = MotionCyan)
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Insert Neon Stock Backdrop", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Insert Studio Stock Backdrop", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             Text("Drops a 3.0s studio backdrop layer at playhead", color = Color.LightGray, fontSize = 11.sp)
                         }
                     }
@@ -550,7 +550,7 @@ fun UpscaleResolutionDialog(
                     ) {
                         Icon(Icons.Default.Hd, contentDescription = null, tint = MotionCyan, modifier = Modifier.size(22.dp))
                         Text(
-                            text = "AI HD / 4K Upscale",
+                            text = "HD / 4K Output Resolution",
                             style = MaterialTheme.typography.titleMedium,
                             color = Color.White,
                             fontWeight = FontWeight.Bold
@@ -603,7 +603,7 @@ fun UpscaleResolutionDialog(
                 if (isProcessing) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = statusMessage ?: "Enhancing detail with Gemini AI...",
+                        text = statusMessage ?: "Updating output resolution...",
                         color = MotionCyan,
                         fontSize = 11.sp
                     )

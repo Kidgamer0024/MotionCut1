@@ -105,7 +105,14 @@ fun TimelineView(
 
     // Selected clip details
     val selectedClip = selectedClipId?.let { project.findClip(it) }
-    val hasKeyframeAtPlayhead = selectedClip?.hasKeyframeAt(activeProperty, currentTimeMs) == true
+    val isMoveActive = activeProperty == AnimatableProperty.POSITION_X || activeProperty == AnimatableProperty.POSITION_Y
+    val activePropertyLabel = if (isMoveActive) "Move" else activeProperty.displayName
+    val hasKeyframeAtPlayhead = if (isMoveActive) {
+        selectedClip?.hasKeyframeAt(AnimatableProperty.POSITION_X, currentTimeMs) == true ||
+            selectedClip?.hasKeyframeAt(AnimatableProperty.POSITION_Y, currentTimeMs) == true
+    } else {
+        selectedClip?.hasKeyframeAt(activeProperty, currentTimeMs) == true
+    }
 
     Column(
         modifier = modifier
@@ -216,7 +223,7 @@ fun TimelineView(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Text(
-                                        text = if (hasKeyframeAtPlayhead) "${activeProperty.displayName} ●" else "+ ${activeProperty.displayName}",
+                                        text = if (hasKeyframeAtPlayhead) "$activePropertyLabel ●" else "+ $activePropertyLabel",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (hasKeyframeAtPlayhead) Color.White else KeyframeViolet,
                                         fontWeight = FontWeight.Bold,
@@ -248,21 +255,25 @@ fun TimelineView(
                             expanded = showPropMenu,
                             onDismissRequest = { showPropMenu = false }
                         ) {
-                            AnimatableProperty.entries.forEach { prop ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = prop.displayName,
-                                            fontWeight = if (prop == activeProperty) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (prop == activeProperty) KeyframeViolet else Color.Unspecified
-                                        )
-                                    },
-                                    onClick = {
-                                        onSelectProperty(prop)
-                                        showPropMenu = false
-                                    }
-                                )
-                            }
+                            AnimatableProperty.entries
+                                .filter { it != AnimatableProperty.POSITION_Y }
+                                .forEach { prop ->
+                                    val label = if (prop == AnimatableProperty.POSITION_X) "Move" else prop.displayName
+                                    val isCur = if (prop == AnimatableProperty.POSITION_X) isMoveActive else prop == activeProperty
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = label,
+                                                fontWeight = if (isCur) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isCur) KeyframeViolet else Color.Unspecified
+                                            )
+                                        },
+                                        onClick = {
+                                            onSelectProperty(prop)
+                                            showPropMenu = false
+                                        }
+                                    )
+                                }
                         }
                     }
 

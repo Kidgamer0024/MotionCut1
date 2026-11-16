@@ -109,7 +109,7 @@ fun TextEditorPanel(
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Add Text Layer", modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Add Text Template", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Add New Text Layer", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
             }
         }
@@ -136,6 +136,7 @@ fun TextEditorPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
+                modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -149,12 +150,24 @@ fun TextEditorPanel(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(
-                text = "${cfg.fontChoice.displayName} • ${cfg.animationType.label}",
-                color = MotionCyan,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium
-            )
+            Surface(
+                color = PlayheadAmber.copy(alpha = 0.2f),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, PlayheadAmber),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { onOpenAddTextModal() }
+                    .testTag("text_studio_header_add_button")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "New Text Layer", tint = PlayheadAmber, modifier = Modifier.size(13.dp))
+                    Text("New Text", color = PlayheadAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
 
         // Live Title Text Input
@@ -163,7 +176,7 @@ fun TextEditorPanel(
             onValueChange = { onUpdateTextConfig(cfg.copy(text = it)) },
             label = { Text("Caption / Title Text", fontSize = 11.sp) },
             singleLine = false,
-            maxLines = 2,
+            maxLines = 4,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = PlayheadAmber,
                 unfocusedBorderColor = StudioBorder,

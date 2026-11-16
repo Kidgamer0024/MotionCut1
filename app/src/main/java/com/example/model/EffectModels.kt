@@ -31,29 +31,34 @@ enum class EffectKernel {
     STARBURST,
     MIRROR_SPLIT,
     GLITCH_BLOCK,
-    PARTICLE_SPARK;
+    PARTICLE_SPARK,
+    GAUSSIAN_BLUR,
+    RADIAL_BLUR,
+    AMBIENT_BACKDROP,
+    BOKEH_BACKDROP,
+    GRID_MATRIX;
 
     fun toLegacyEffectType(): EffectType = when (this) {
         CHROMATIC_ABERRATION, PRISM_SHIFT, GLITCH_BLOCK -> EffectType.CHROMATIC_ABERRATION
-        GLOW, LIGHT_SWEEP, STARBURST, PARTICLE_SPARK -> EffectType.GLOW
-        MOTION_BLUR -> EffectType.MOTION_BLUR
+        GLOW, LIGHT_SWEEP, STARBURST, PARTICLE_SPARK, AMBIENT_BACKDROP, BOKEH_BACKDROP -> EffectType.GLOW
+        MOTION_BLUR, GAUSSIAN_BLUR, RADIAL_BLUR -> EffectType.MOTION_BLUR
         WAVE_WARP, KALEIDOSCOPE, MIRROR_SPLIT -> EffectType.WAVE_WARP
         FILM_GRAIN, VIGNETTE, COLOR_PULSE -> EffectType.FILM_GRAIN
-        SCANLINES, PIXELATE, HALFTONE, NEON_EDGES -> EffectType.SCANLINES
+        SCANLINES, PIXELATE, HALFTONE, NEON_EDGES, GRID_MATRIX -> EffectType.SCANLINES
         LENS_DISTORTION -> EffectType.LENS_DISTORTION
         CAMERA_SHAKE -> EffectType.CAMERA_SHAKE
     }
 }
 
 enum class EffectType(val displayName: String, val category: String, val iconDescription: String) {
-    CHROMATIC_ABERRATION("RGB Split", "Distortion", "Separates red and cyan channels for modern glitch look"),
-    GLOW("Diffusion Glow", "Light & Glow", "Cinematic bloom and soft highlight haze"),
+    CHROMATIC_ABERRATION("RGB Split", "Filter", "Separates red and cyan channels for chromatic fringe"),
+    GLOW("Diffusion Glow", "Lighting", "Soft highlight bloom and ambient studio haze"),
     MOTION_BLUR("Directional Blur", "Blur", "Dynamic velocity blur along directional vectors"),
-    WAVE_WARP("Wave Warp", "Distortion", "Liquid oscillation wave distortion"),
-    FILM_GRAIN("35mm Film Grain", "Retro", "Authentic analog cinematic silver halide grain"),
-    SCANLINES("CRT Scanlines", "Retro", "Vintage arcade cathode ray monitor lines"),
-    LENS_DISTORTION("Anamorphic Lens", "3D & Camera", "Curved glass optical barrel distortion"),
-    CAMERA_SHAKE("Action Cam Shake", "3D & Camera", "Handheld chaotic camera turbulence");
+    WAVE_WARP("Wave Warp", "Other", "Liquid oscillation wave distortion"),
+    FILM_GRAIN("35mm Film Grain", "Filter", "Authentic analog cinematic silver halide grain"),
+    SCANLINES("CRT Scanlines", "Other", "Vintage arcade cathode ray monitor lines"),
+    LENS_DISTORTION("Anamorphic Lens", "Other", "Curved glass optical barrel distortion"),
+    CAMERA_SHAKE("Action Cam Shake", "Other", "Handheld camera movement turbulence");
 
     fun toKernel(): EffectKernel = when (this) {
         CHROMATIC_ABERRATION -> EffectKernel.CHROMATIC_ABERRATION
@@ -78,6 +83,7 @@ data class EffectPreset(
     val defaultSpeed: Float = 1.0f,
     val defaultParamA: Float = 0.50f,
     val defaultParamB: Float = 0.50f,
+    val defaultColorHex: Long = 0xFF00E5FF,
     val paramALabel: String = "Detail",
     val paramBLabel: String = "Phase",
     val tags: List<String> = emptyList()
@@ -96,6 +102,7 @@ data class VideoEffect(
     val kernel: EffectKernel? = null,
     val paramA: Float = 0.5f,
     val paramB: Float = 0.5f,
+    val colorHex: Long = 0xFF00E5FF,
     val paramALabel: String = "Detail",
     val paramBLabel: String = "Phase"
 ) {

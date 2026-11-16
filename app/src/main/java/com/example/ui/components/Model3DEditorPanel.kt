@@ -296,16 +296,19 @@ fun Model3DEditorPanel(
         } else if (baseCfg.source == Model3DSource.EXTRUDED_TEXT) {
             OutlinedTextField(
                 value = baseCfg.extrudedText,
-                onValueChange = { if (it.length <= 12) onUpdateModel3D(selectedClip.id, baseCfg.copy(extrudedText = it)) },
+                onValueChange = { onUpdateModel3D(selectedClip.id, baseCfg.copy(extrudedText = it)) },
                 label = { Text("Extruded 3D Text", fontSize = 11.sp) },
-                singleLine = true,
+                singleLine = false,
+                maxLines = 4,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MotionCyan,
                     unfocusedBorderColor = StudioBorder,
                     focusedTextColor = Color.White,
                     unfocusedTextColor = Color.White
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("panel_extruded_text_3d_input")
             )
         }
 

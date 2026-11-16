@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -308,24 +309,6 @@ object DeviceMediaScanner {
                 }
             }
 
-            // 5. Built-in studio soundtracks
-            SampleMusicLibrary.getAllTracks().forEach { track ->
-                items.add(
-                    DeviceAudioItem(
-                        id = "studio_${track.id}",
-                        title = track.title,
-                        artist = "${track.artist} • ${track.category.label}",
-                        uriString = null,
-                        durationMs = track.durationSec * 1000L,
-                        accentColorHex = track.coverColorHex,
-                        bpm = track.bpm,
-                        isDeviceFile = false,
-                        waveformSamples = track.waveformSamples,
-                        folderName = "Studio"
-                    )
-                )
-            }
-
             items
         }
 
@@ -394,6 +377,35 @@ object DeviceMediaScanner {
     }
 
     private fun decodeAndroidBitmapFromUri(context: Context, uri: Uri, sampleSize: Int): Bitmap? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val decoded = runCatching {
+                val source = if (uri.scheme == "file" && uri.path != null) {
+                    ImageDecoder.createSource(File(uri.path!!))
+                } else {
+                    ImageDecoder.createSource(context.contentResolver, uri)
+                }
+                ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                    decoder.isMutableRequired = false
+                    if (sampleSize > 1) {
+                        val targetW = (info.size.width / sampleSize).coerceAtLeast(1)
+                        val targetH = (info.size.height / sampleSize).coerceAtLeast(1)
+                        decoder.setTargetSize(targetW, targetH)
+                    }
+                }
+            }.getOrNull()
+            if (decoded != null) {
+                return if (decoded.config != Bitmap.Config.ARGB_8888) {
+                    decoded.copy(Bitmap.Config.ARGB_8888, false)?.also {
+                        it.setHasAlpha(true)
+                        decoded.recycle()
+                    } ?: decoded
+                } else {
+                    decoded.also { runCatching { it.setHasAlpha(true) } }
+                }
+            }
+        }
+
         val opts = transparentBitmapOptions(sampleSize)
         val decoded = if (uri.scheme == "file" && uri.path != null) {
             BitmapFactory.decodeFile(uri.path, opts)
@@ -405,10 +417,11 @@ object DeviceMediaScanner {
 
         return if (decoded.config != Bitmap.Config.ARGB_8888) {
             decoded.copy(Bitmap.Config.ARGB_8888, false)?.also {
+                it.setHasAlpha(true)
                 decoded.recycle()
             } ?: decoded
         } else {
-            decoded
+            decoded.also { runCatching { it.setHasAlpha(true) } }
         }
     }
 

@@ -19,7 +19,7 @@ enum class Library3DModel(val displayName: String, val category: String, val bad
     TROPHY_CUP("Victory Trophy", "Awards", "WIN"),
     ROYAL_CROWN("Royal Crown", "Awards", "VIP"),
     CRYSTAL_GEM("Prism Crystal", "Style", "GEM"),
-    MECHANICAL_GEAR("Cyber Gear", "Tech", "MECH"),
+    MECHANICAL_GEAR("Precision Gear", "Tech", "MECH"),
     LIGHTNING_BOLT("3D Thunder", "Style", "FX"),
     HEART_3D("Sculpted Heart", "Style", "LOVE"),
     PLANET_SATURN("Ringed Planet", "Sci-Fi", "SPACE")

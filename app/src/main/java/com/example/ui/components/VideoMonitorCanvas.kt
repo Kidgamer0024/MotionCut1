@@ -45,6 +45,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -181,6 +182,21 @@ fun VideoMonitorCanvas(
                 val canvasW = size.width
                 val canvasH = size.height
 
+                // 0. Subtle dark transparency checkerboard behind video/overlay layers so PNG cutouts show alpha cleanly
+                val checkSize = 12.dp.toPx()
+                val cols = (canvasW / checkSize).toInt() + 1
+                val rows = (canvasH / checkSize).toInt() + 1
+                for (r in 0 until rows) {
+                    for (c in 0 until cols) {
+                        val isLightCell = ((r + c) % 2) == 0
+                        drawRect(
+                            color = if (isLightCell) Color(0xFF141922) else Color(0xFF0A0D12),
+                            topLeft = Offset(c * checkSize, r * checkSize),
+                            size = Size(checkSize, checkSize)
+                        )
+                    }
+                }
+
                 // 1. Draw subtle safety guide margins (90% action safe, 80% title safe)
                 drawRect(
                     color = Color(0x15FFFFFF),
@@ -222,9 +238,19 @@ fun VideoMonitorCanvas(
                                             clipWidth = canvasW,
                                             clipHeight = canvasH
                                         )
+                                        val transformedMaskPath = Path().apply {
+                                            addPath(evaluatedMask.path)
+                                            val maskMatrix = androidx.compose.ui.graphics.Matrix()
+                                            maskMatrix.translate(evaluatedMask.positionX, evaluatedMask.positionY)
+                                            maskMatrix.rotateZ(evaluatedMask.rotation)
+                                            transform(maskMatrix)
+                                        }
+                                        val maskedTransform = transform.copy(
+                                            opacity = (transform.opacity * evaluatedMask.opacity).coerceIn(0f, 1f)
+                                        )
 
                                         // Render clip inside mask clipping path
-                                        clipPath(evaluatedMask.path) {
+                                        clipPath(transformedMaskPath) {
                                             drawClipLayerContent(
                                                 context = context,
                                                 clip = clip,
@@ -234,15 +260,23 @@ fun VideoMonitorCanvas(
                                                 clipBitmaps = clipBitmaps,
                                                 uriBitmaps = uriBitmaps,
                                                 activeColorFilter = activeColorFilter,
-                                                transform = transform,
+                                                transform = maskedTransform,
                                                 textMeasurer = textMeasurer
                                             )
                                         }
 
-                                        // Render glowing animated mask boundary
+                                        if (evaluatedMask.borderWidthPx > 0.5f) {
+                                            drawPath(
+                                                path = transformedMaskPath,
+                                                color = Color(evaluatedMask.borderColorHex).copy(alpha = evaluatedMask.opacity.coerceIn(0f, 1f)),
+                                                style = Stroke(width = evaluatedMask.borderWidthPx)
+                                            )
+                                        }
+
+                                        // Render animated mask selection guide
                                         if (isSelected) {
                                             drawPath(
-                                                path = evaluatedMask.path,
+                                                path = transformedMaskPath,
                                                 color = KeyframeViolet,
                                                 style = Stroke(
                                                     width = 2.dp.toPx(),
@@ -253,7 +287,10 @@ fun VideoMonitorCanvas(
                                             // Draw vertex handles for polygon mask
                                             if (enabledMask.shapeType == MaskShapeType.FREEFORM_POLYGON) {
                                                 enabledMask.vertices.forEach { v ->
-                                                    val pt = Offset(v.x * evaluatedMask.scaleX, v.y * evaluatedMask.scaleY)
+                                                    val pt = Offset(
+                                                        v.x * evaluatedMask.scaleX + evaluatedMask.positionX,
+                                                        v.y * evaluatedMask.scaleY + evaluatedMask.positionY
+                                                    )
                                                     drawCircle(Color.White, 5.dp.toPx(), pt)
                                                     drawCircle(KeyframeViolet, 5.dp.toPx(), pt, style = Stroke(2.dp.toPx()))
                                                 }
@@ -302,7 +339,7 @@ fun VideoMonitorCanvas(
                                         val halfBw = bboxW / 2f
                                         val halfBh = bboxH / 2f
 
-                                        // Neon border
+                                        // Selection frame border
                                         drawRect(
                                             color = MotionCyan,
                                             topLeft = Offset(-halfBw, -halfBh),
@@ -501,7 +538,7 @@ private fun DrawScope.drawClipLayerContent(
                     colorFilter = activeColorFilter,
                     alpha = transform.opacity
                 )
-            } else {
+            } else if (clip.mediaUri == null && clip.assetResId == null) {
                 drawRoundRect(
                     color = Color(clip.colorHex),
                     topLeft = Offset(-canvasW / 2f, -canvasH / 2f),

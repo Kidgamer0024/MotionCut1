@@ -22,7 +22,9 @@ object MaskCompositor {
         val featherPx: Float,
         val path: Path,
         val isInverted: Boolean,
-        val opacity: Float
+        val opacity: Float,
+        val borderWidthPx: Float = 0f,
+        val borderColorHex: Long = 0xFFFFFFFF
     )
 
     fun evaluateMask(mask: MaskConfig, currentTimeMs: Long, clipStartTimeMs: Long, clipWidth: Float, clipHeight: Float): EvaluatedMask {
@@ -68,18 +70,33 @@ object MaskCompositor {
 
         // Build base path based on shape type
         val basePath = Path()
-        val halfW = (clipWidth * 0.4f * scale) + mask.expansion
-        val halfH = (clipHeight * 0.4f * scale) + mask.expansion
+        val halfW = ((clipWidth * 0.4f * scale * mask.aspectWidth.coerceIn(0.25f, 2.5f)) + mask.expansion)
+            .coerceAtLeast(4f)
+        val halfH = ((clipHeight * 0.4f * scale * mask.aspectHeight.coerceIn(0.25f, 2.5f)) + mask.expansion)
+            .coerceAtLeast(4f)
 
         when (mask.shapeType) {
             MaskShapeType.RECTANGLE -> {
+                val radius = mask.cornerRadiusPx.coerceIn(0f, minOf(halfW, halfH))
                 basePath.addRoundRect(
                     RoundRect(
                         left = -halfW,
                         top = -halfH,
                         right = halfW,
                         bottom = halfH,
-                        cornerRadius = CornerRadius(12f)
+                        cornerRadius = CornerRadius(radius)
+                    )
+                )
+            }
+            MaskShapeType.CIRCLE -> {
+                val radius = ((minOf(clipWidth, clipHeight) * 0.35f * scale) + mask.expansion)
+                    .coerceAtLeast(4f)
+                basePath.addOval(
+                    Rect(
+                        left = -radius,
+                        top = -radius,
+                        right = radius,
+                        bottom = radius
                     )
                 )
             }
@@ -94,11 +111,11 @@ object MaskCompositor {
                 )
             }
             MaskShapeType.LINEAR_SPLIT -> {
-                // Diagonal half-plane split
-                basePath.moveTo(-clipWidth, -clipHeight)
-                basePath.lineTo(clipWidth, -clipHeight)
-                basePath.lineTo(clipWidth, 0f)
-                basePath.lineTo(-clipWidth, 0f)
+                val splitOffset = mask.expansion
+                basePath.moveTo(-clipWidth * 1.5f, -clipHeight * 1.5f)
+                basePath.lineTo(clipWidth * 1.5f, -clipHeight * 1.5f)
+                basePath.lineTo(clipWidth * 1.5f, splitOffset)
+                basePath.lineTo(-clipWidth * 1.5f, splitOffset)
                 basePath.close()
             }
             MaskShapeType.FREEFORM_POLYGON -> {
@@ -137,7 +154,9 @@ object MaskCompositor {
             featherPx = feather,
             path = finalPath,
             isInverted = mask.isInverted,
-            opacity = mask.opacity
+            opacity = mask.opacity,
+            borderWidthPx = mask.borderWidthPx,
+            borderColorHex = mask.borderColorHex
         )
     }
 }

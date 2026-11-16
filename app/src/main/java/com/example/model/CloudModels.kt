@@ -123,10 +123,22 @@ data class CloudProject(
     companion object {
         fun fromProject(project: Project, ownerUid: String): CloudProject {
             val entity = ProjectMappers.toEntity(project)
-            return fromEntity(entity, ownerUid)
+            val safeJson = if (entity.projectJson.length > 840_000) {
+                com.example.data.local.ProjectJsonCodec.encodeBoundedForCloud(project, 840_000)
+            } else {
+                entity.projectJson
+            }
+            return fromEntity(entity.copy(projectJson = safeJson), ownerUid)
         }
 
         fun fromEntity(entity: ProjectEntity, ownerUid: String): CloudProject {
+            val safeJson = if (entity.projectJson.length > 840_000) {
+                com.example.data.local.ProjectJsonCodec.decode(entity.projectJson)
+                    ?.let { com.example.data.local.ProjectJsonCodec.encodeBoundedForCloud(it, 840_000) }
+                    ?: entity.projectJson.take(840_000)
+            } else {
+                entity.projectJson
+            }
             return CloudProject(
                 id = entity.id,
                 userId = ownerUid,
@@ -140,7 +152,7 @@ data class CloudProject(
                 thumbnailResId = entity.thumbnailResId,
                 clipCount = entity.clipCount.toLong(),
                 trackCount = entity.trackCount.toLong(),
-                projectJson = entity.projectJson
+                projectJson = safeJson
             )
         }
     }

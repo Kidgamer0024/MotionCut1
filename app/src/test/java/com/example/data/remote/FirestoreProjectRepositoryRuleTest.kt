@@ -43,7 +43,7 @@ class FirestoreProjectRepositoryRuleTest : FirestoreEmulatorTestBase() {
         val projId = "proj_${UUID.randomUUID().toString().replace("-", "_")}"
         val project = Project(
             id = projId,
-            title = "Emulator Cyberpunk Cut",
+            title = "Emulator Studio Cut",
             aspectRatio = AspectRatio.PORTRAIT_9_16,
             frameRate = FrameRate.FPS_60,
             resolution = ExportResolution.FHD_1080P,
@@ -61,7 +61,7 @@ class FirestoreProjectRepositoryRuleTest : FirestoreEmulatorTestBase() {
         }
         val found = observed.find { it.id == projId }
         assertNotNull(found)
-        assertEquals("Emulator Cyberpunk Cut", found!!.title)
+        assertEquals("Emulator Studio Cut", found!!.title)
 
         val renameResult = withTimeout(DEFAULT_TIMEOUT_MS) {
             repo.renameCloudProject(projId, "Renamed Director Cut")

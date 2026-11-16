@@ -4,7 +4,8 @@ import java.util.UUID
 
 enum class MaskShapeType(val displayName: String, val iconName: String) {
     RECTANGLE("Rectangle", "Square bounds with corner radius"),
-    ELLIPSE("Circle / Oval", "Smooth elliptical soft focus"),
+    CIRCLE("Circle", "Uniform circular mask"),
+    ELLIPSE("Oval / Ellipse", "Smooth elliptical soft focus"),
     LINEAR_SPLIT("Linear Gradient", "Directional split wipe mask"),
     RADIAL_VIGNETTE("Radial Spotlight", "Circular spotlight vignette mask"),
     FREEFORM_POLYGON("Custom Polygon", "Multi-point vector polygon path")
@@ -25,6 +26,11 @@ data class MaskConfig(
     val featherPx: Float = 0f,       // 0 to 50px soft edge
     val opacity: Float = 1.0f,       // 0 to 1
     val expansion: Float = 0f,       // -100 to +100 px
+    val cornerRadiusPx: Float = 16f, // 0 to 160 px
+    val aspectWidth: Float = 1.0f,   // 0.25 to 2.5
+    val aspectHeight: Float = 1.0f,  // 0.25 to 2.5
+    val borderWidthPx: Float = 0f,   // 0 to 24 px
+    val borderColorHex: Long = 0xFFFFFFFF,
     // Transform parameters
     val positionX: Float = 0f,
     val positionY: Float = 0f,

@@ -396,10 +396,11 @@ fun Add3DModelDialog(
                     Model3DSource.EXTRUDED_TEXT -> {
                         OutlinedTextField(
                             value = extrudedText,
-                            onValueChange = { if (it.length <= 12) extrudedText = it },
+                            onValueChange = { extrudedText = it },
                             label = { Text("3D Text", fontSize = 11.sp) },
                             leadingIcon = { Icon(Icons.Default.TextFields, contentDescription = null, tint = MotionCyan) },
-                            singleLine = true,
+                            singleLine = false,
+                            maxLines = 4,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = MotionCyan,
                                 unfocusedBorderColor = StudioBorder,

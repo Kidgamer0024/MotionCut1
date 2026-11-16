@@ -122,11 +122,20 @@ fun KeyframeGraphEditor(
     onSeekInClip: (Long) -> Unit = {},
     onUpdateEasing: (AnimatableProperty, String, EasingType) -> Unit,
     onUpdateValue: (AnimatableProperty, Float) -> Unit,
+    onToggleMoveKeyframe: () -> Unit = onToggleKeyframe,
+    onDeleteMoveKeyframeAtTime: (Long) -> Unit = {},
+    onClearMoveKeyframes: () -> Unit = { onClearTrack(AnimatableProperty.POSITION_X) },
+    onUpdateMoveEasing: (Long, EasingType) -> Unit = { _, _ -> },
+    onUpdateMoveValues: (Float, Float) -> Unit = { x, _ -> onUpdateValue(AnimatableProperty.POSITION_X, x) },
     modifier: Modifier = Modifier
 ) {
+    val isMoveMode = selectedProperty == AnimatableProperty.POSITION_X || selectedProperty == AnimatableProperty.POSITION_Y
+    val effectiveProperty = if (selectedProperty == AnimatableProperty.POSITION_Y) AnimatableProperty.POSITION_X else selectedProperty
+    val propertyDisplayTitle = if (isMoveMode) "Move" else effectiveProperty.displayName
+
     val clipDuration = clip.durationMs.coerceAtLeast(1L)
     val relTime = (currentTimeMs - clip.startTimeMs).coerceIn(0L, clipDuration)
-    val track = clip.keyframeTracks[selectedProperty]
+    val track = clip.keyframeTracks[effectiveProperty]
     val keyframes = track?.keyframes?.sortedBy { it.timeMs }.orEmpty()
 
     val nearbyKeyframe = keyframes.minByOrNull { abs(it.timeMs - relTime) }
@@ -164,14 +173,17 @@ fun KeyframeGraphEditor(
     var selectedBpIndex by remember(segmentKeyframe?.id) { mutableIntStateOf(0) }
     var draggingBpIndex by remember { mutableIntStateOf(-1) }
 
-    val currentValue = KeyframeEvaluator.evaluateProperty(clip, selectedProperty, currentTimeMs)
+    val currentValue = KeyframeEvaluator.evaluateProperty(clip, effectiveProperty, currentTimeMs)
+    val currentPosY = if (isMoveMode) KeyframeEvaluator.evaluateProperty(clip, AnimatableProperty.POSITION_Y, currentTimeMs) else 0f
 
-    val formattedValue = when (selectedProperty) {
-        AnimatableProperty.OPACITY -> "${(currentValue * 100f).toInt()}%"
-        AnimatableProperty.SCALE,
-        AnimatableProperty.DEPTH_Z_3D,
-        AnimatableProperty.EXTRUSION_3D -> String.format(Locale.US, "%.2f%s", currentValue, selectedProperty.unit)
-        else -> String.format(Locale.US, "%.1f%s", currentValue, selectedProperty.unit)
+    val formattedValue = when {
+        isMoveMode -> "(${currentValue.toInt()}px, ${currentPosY.toInt()}px)"
+        effectiveProperty == AnimatableProperty.OPACITY -> "${(currentValue * 100f).toInt()}%"
+        effectiveProperty == AnimatableProperty.SCALE ||
+            effectiveProperty == AnimatableProperty.DEPTH_Z_3D ||
+            effectiveProperty == AnimatableProperty.EXTRUSION_3D ->
+            String.format(Locale.US, "%.2f%s", currentValue, effectiveProperty.unit)
+        else -> String.format(Locale.US, "%.1f%s", currentValue, effectiveProperty.unit)
     }
 
     Column(
@@ -182,14 +194,13 @@ fun KeyframeGraphEditor(
             .padding(horizontal = 10.dp, vertical = 8.dp)
             .testTag("keyframe_graph_editor")
     ) {
-        // 1. Property Selector Chips
+        // 1. Property Selector Chips (Pos X + Pos Y unified under "Move")
         val props = remember(clip.type) {
             if (clip.type == com.example.model.ClipType.MODEL_3D) {
-                AnimatableProperty.entries
+                AnimatableProperty.entries.filter { it != AnimatableProperty.POSITION_Y }
             } else {
                 listOf(
                     AnimatableProperty.POSITION_X,
-                    AnimatableProperty.POSITION_Y,
                     AnimatableProperty.SCALE,
                     AnimatableProperty.ROTATION,
                     AnimatableProperty.OPACITY
@@ -201,8 +212,14 @@ fun KeyframeGraphEditor(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             items(props) { prop ->
-                val isSelected = prop == selectedProperty
-                val hasKeyframes = clip.keyframeTracks[prop]?.keyframes?.isNotEmpty() == true
+                val isSelected = if (prop == AnimatableProperty.POSITION_X) isMoveMode else prop == effectiveProperty
+                val hasKeyframes = if (prop == AnimatableProperty.POSITION_X) {
+                    clip.keyframeTracks[AnimatableProperty.POSITION_X]?.keyframes?.isNotEmpty() == true ||
+                        clip.keyframeTracks[AnimatableProperty.POSITION_Y]?.keyframes?.isNotEmpty() == true
+                } else {
+                    clip.keyframeTracks[prop]?.keyframes?.isNotEmpty() == true
+                }
+                val chipLabel = if (prop == AnimatableProperty.POSITION_X) "Move" else prop.displayName
 
                 Box(
                     modifier = Modifier
@@ -215,7 +232,7 @@ fun KeyframeGraphEditor(
                         )
                         .clickable { onSelectProperty(prop) }
                         .padding(horizontal = 10.dp, vertical = 6.dp)
-                        .testTag("kf_prop_${prop.name.lowercase()}")
+                        .testTag(if (prop == AnimatableProperty.POSITION_X) "kf_prop_move" else "kf_prop_${prop.name.lowercase()}")
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -230,7 +247,7 @@ fun KeyframeGraphEditor(
                             )
                         }
                         Text(
-                            text = prop.displayName,
+                            text = chipLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isSelected) Color.White else Color.LightGray,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
@@ -254,7 +271,7 @@ fun KeyframeGraphEditor(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    text = "${selectedProperty.displayName}: $formattedValue",
+                    text = "$propertyDisplayTitle: $formattedValue",
                     style = MaterialTheme.typography.labelMedium,
                     color = MotionCyan,
                     fontWeight = FontWeight.Bold
@@ -297,7 +314,9 @@ fun KeyframeGraphEditor(
                     shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(1.dp, if (hasKeyframeAtPlayhead) Color.White else KeyframeViolet),
                     modifier = Modifier
-                        .clickable { onToggleKeyframe() }
+                        .clickable {
+                            if (isMoveMode) onToggleMoveKeyframe() else onToggleKeyframe()
+                        }
                         .testTag("graph_toggle_keyframe_button")
                 ) {
                     Row(
@@ -340,7 +359,11 @@ fun KeyframeGraphEditor(
                 IconButton(
                     onClick = {
                         if (removableKf != null) {
-                            onDeleteKeyframe(selectedProperty, removableKf.id)
+                            if (isMoveMode) {
+                                onDeleteMoveKeyframeAtTime(clip.startTimeMs + removableKf.timeMs)
+                            } else {
+                                onDeleteKeyframe(effectiveProperty, removableKf.id)
+                            }
                             selectedKeyframeId = null
                         }
                     },
@@ -359,7 +382,7 @@ fun KeyframeGraphEditor(
 
                 IconButton(
                     onClick = {
-                        onClearTrack(selectedProperty)
+                        if (isMoveMode) onClearMoveKeyframes() else onClearTrack(effectiveProperty)
                         selectedKeyframeId = null
                     },
                     enabled = keyframes.isNotEmpty(),
@@ -376,7 +399,10 @@ fun KeyframeGraphEditor(
                 }
 
                 IconButton(
-                    onClick = { onUpdateValue(selectedProperty, selectedProperty.defaultValue) },
+                    onClick = {
+                        if (isMoveMode) onUpdateMoveValues(0f, 0f)
+                        else onUpdateValue(effectiveProperty, effectiveProperty.defaultValue)
+                    },
                     modifier = Modifier
                         .size(32.dp)
                         .testTag("reset_property_button")
@@ -493,21 +519,64 @@ fun KeyframeGraphEditor(
             }
         }
 
-        // 4. Live Value Adjustment Slider
-        Slider(
-            value = currentValue.coerceIn(selectedProperty.minVal, selectedProperty.maxVal),
-            onValueChange = { newVal -> onUpdateValue(selectedProperty, newVal) },
-            valueRange = selectedProperty.minVal..selectedProperty.maxVal,
-            colors = SliderDefaults.colors(
-                thumbColor = MotionCyan,
-                activeTrackColor = MotionCyan,
-                inactiveTrackColor = StudioBorder
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(34.dp)
-                .testTag("keyframe_value_slider")
-        )
+        // 4. Live Value Adjustment Slider(s)
+        if (isMoveMode) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(30.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("X", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Slider(
+                    value = currentValue.coerceIn(AnimatableProperty.POSITION_X.minVal, AnimatableProperty.POSITION_X.maxVal),
+                    onValueChange = { newX -> onUpdateMoveValues(newX, currentPosY) },
+                    valueRange = AnimatableProperty.POSITION_X.minVal..AnimatableProperty.POSITION_X.maxVal,
+                    colors = SliderDefaults.colors(
+                        thumbColor = MotionCyan,
+                        activeTrackColor = MotionCyan,
+                        inactiveTrackColor = StudioBorder
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("keyframe_value_slider")
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(30.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Y", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Slider(
+                    value = currentPosY.coerceIn(AnimatableProperty.POSITION_Y.minVal, AnimatableProperty.POSITION_Y.maxVal),
+                    onValueChange = { newY -> onUpdateMoveValues(currentValue, newY) },
+                    valueRange = AnimatableProperty.POSITION_Y.minVal..AnimatableProperty.POSITION_Y.maxVal,
+                    colors = SliderDefaults.colors(
+                        thumbColor = KeyframeViolet,
+                        activeTrackColor = KeyframeViolet,
+                        inactiveTrackColor = StudioBorder
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("keyframe_move_y_slider")
+                )
+            }
+        } else {
+            Slider(
+                value = currentValue.coerceIn(effectiveProperty.minVal, effectiveProperty.maxVal),
+                onValueChange = { newVal -> onUpdateValue(effectiveProperty, newVal) },
+                valueRange = effectiveProperty.minVal..effectiveProperty.maxVal,
+                colors = SliderDefaults.colors(
+                    thumbColor = MotionCyan,
+                    activeTrackColor = MotionCyan,
+                    inactiveTrackColor = StudioBorder
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(34.dp)
+                    .testTag("keyframe_value_slider")
+            )
+        }
 
         Spacer(modifier = Modifier.height(6.dp))
 
@@ -527,7 +596,9 @@ fun KeyframeGraphEditor(
                         .clickable {
                             useBreakpointMode = false
                             if (segmentKeyframe != null) {
-                                onUpdateEasing(selectedProperty, segmentKeyframe.id, EasingType.CubicBezier(p1x, p1y, p2x, p2y))
+                                val nextEasing = EasingType.CubicBezier(p1x, p1y, p2x, p2y)
+                                if (isMoveMode) onUpdateMoveEasing(segmentKeyframe.timeMs, nextEasing)
+                                else onUpdateEasing(effectiveProperty, segmentKeyframe.id, nextEasing)
                             }
                         }
                         .testTag("easing_mode_bezier")
@@ -552,7 +623,9 @@ fun KeyframeGraphEditor(
                             if (segmentKeyframe != null) {
                                 val nextPts = breakpoints.ifEmpty { defaultBreakpoints() }
                                 breakpoints = nextPts
-                                onUpdateEasing(selectedProperty, segmentKeyframe.id, EasingType.MultiPoint(nextPts))
+                                val nextEasing = EasingType.MultiPoint(nextPts)
+                                if (isMoveMode) onUpdateMoveEasing(segmentKeyframe.timeMs, nextEasing)
+                                else onUpdateEasing(effectiveProperty, segmentKeyframe.id, nextEasing)
                             }
                         }
                         .testTag("easing_mode_breakpoints")
@@ -582,7 +655,9 @@ fun KeyframeGraphEditor(
                                     breakpoints = updated
                                     selectedBpIndex = updated.indexOfFirst { abs(it.x - newX) < 0.001f }.coerceAtLeast(0)
                                     if (segmentKeyframe != null) {
-                                        onUpdateEasing(selectedProperty, segmentKeyframe.id, EasingType.MultiPoint(updated))
+                                        val nextEasing = EasingType.MultiPoint(updated)
+                                        if (isMoveMode) onUpdateMoveEasing(segmentKeyframe.timeMs, nextEasing)
+                                        else onUpdateEasing(effectiveProperty, segmentKeyframe.id, nextEasing)
                                     }
                                 }
                             }
@@ -610,7 +685,9 @@ fun KeyframeGraphEditor(
                                     breakpoints = updated
                                     selectedBpIndex = (idx - 1).coerceAtLeast(0)
                                     if (segmentKeyframe != null) {
-                                        onUpdateEasing(selectedProperty, segmentKeyframe.id, EasingType.MultiPoint(updated))
+                                        val nextEasing = EasingType.MultiPoint(updated)
+                                        if (isMoveMode) onUpdateMoveEasing(segmentKeyframe.timeMs, nextEasing)
+                                        else onUpdateEasing(effectiveProperty, segmentKeyframe.id, nextEasing)
                                     }
                                 }
                             }
@@ -662,7 +739,9 @@ fun KeyframeGraphEditor(
                                         breakpoints = updated
                                         selectedBpIndex = updated.indexOfFirst { abs(it.x - tx) < 0.001f }.coerceAtLeast(0)
                                         if (segmentKeyframe != null) {
-                                            onUpdateEasing(selectedProperty, segmentKeyframe.id, EasingType.MultiPoint(updated))
+                                            val nextEasing = EasingType.MultiPoint(updated)
+                                            if (isMoveMode) onUpdateMoveEasing(segmentKeyframe.timeMs, nextEasing)
+                                            else onUpdateEasing(effectiveProperty, segmentKeyframe.id, nextEasing)
                                         }
                                     }
                                 }
@@ -709,7 +788,9 @@ fun KeyframeGraphEditor(
                                         draggingBpIndex = sorted.indexOf(target).coerceAtLeast(0)
                                         selectedBpIndex = draggingBpIndex
                                         if (segmentKeyframe != null) {
-                                            onUpdateEasing(selectedProperty, segmentKeyframe.id, EasingType.MultiPoint(sorted))
+                                            val nextEasing = EasingType.MultiPoint(sorted)
+                                            if (isMoveMode) onUpdateMoveEasing(segmentKeyframe.timeMs, nextEasing)
+                                            else onUpdateEasing(effectiveProperty, segmentKeyframe.id, nextEasing)
                                         }
                                     } else if (!useBreakpointMode) {
                                         val touchX = (change.position.x / w).coerceIn(0f, 1f)
@@ -722,11 +803,9 @@ fun KeyframeGraphEditor(
                                             p2y = touchY
                                         }
                                         if (segmentKeyframe != null) {
-                                            onUpdateEasing(
-                                                selectedProperty,
-                                                segmentKeyframe.id,
-                                                EasingType.CubicBezier(p1x, p1y, p2x, p2y)
-                                            )
+                                            val nextEasing = EasingType.CubicBezier(p1x, p1y, p2x, p2y)
+                                            if (isMoveMode) onUpdateMoveEasing(segmentKeyframe.timeMs, nextEasing)
+                                            else onUpdateEasing(effectiveProperty, segmentKeyframe.id, nextEasing)
                                         }
                                     }
                                 }
@@ -832,11 +911,9 @@ fun KeyframeGraphEditor(
                         p2x = preset.p2x
                         p2y = preset.p2y
                         if (segmentKeyframe != null) {
-                            onUpdateEasing(
-                                selectedProperty,
-                                segmentKeyframe.id,
-                                EasingType.CubicBezier(p1x, p1y, p2x, p2y)
-                            )
+                            val nextEasing = EasingType.CubicBezier(p1x, p1y, p2x, p2y)
+                            if (isMoveMode) onUpdateMoveEasing(segmentKeyframe.timeMs, nextEasing)
+                            else onUpdateEasing(effectiveProperty, segmentKeyframe.id, nextEasing)
                         }
                     }
                 ) {

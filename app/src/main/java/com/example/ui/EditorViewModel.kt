@@ -9,11 +9,13 @@ import com.example.data.local.ProjectEntity
 import com.example.data.remote.FirestoreProjectRepository
 import com.example.engine.AiVideoToolsManager
 import com.example.engine.AudioSynthesizerEngine
+import com.example.engine.AutoBackgroundRemover
 import com.example.engine.CameraTracker
 import com.example.engine.KeyframeEvaluator
 import com.example.engine.PlaybackEngine
 import com.example.engine.RecordedVoiceOver
 import com.example.engine.VoiceOverRecorderEngine
+import com.example.model.MaskShapeType
 import com.example.model.AnimatableProperty
 import com.example.model.AspectRatio
 import com.example.model.ClipItem
@@ -54,6 +56,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.Collections
 import java.util.UUID
 
 enum class EditorToolTab(val label: String) {
@@ -107,6 +110,7 @@ class EditorViewModel(
 
     private val _initialSeedFinished = MutableStateFlow(false)
     private val _cloudSyncRetryTrigger = MutableStateFlow(0)
+    private val uploadedVersionKeys = Collections.synchronizedSet(mutableSetOf<String>())
 
     // Real-time Firestore listener with two-tier Flow error handling and manual retry trigger
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -118,8 +122,16 @@ class EditorViewModel(
                         val userCreatedProjects = cloudProjects.filterNot {
                             it.id in com.example.data.SampleProjects.SEEDED_SAMPLE_IDS
                         }
-                        if (userCreatedProjects.isNotEmpty() || _initialSeedFinished.value) {
-                            repository.syncFromCloud(userCreatedProjects.map { it.toRoomEntity() })
+                        val localToUpload = repository.mergeFromCloud(userCreatedProjects.map { it.toRoomEntity() })
+                        if (_initialSeedFinished.value && localToUpload.isNotEmpty()) {
+                            viewModelScope.launch {
+                                localToUpload.forEach { localProj ->
+                                    val key = "${localProj.id}:${localProj.updatedAt}"
+                                    if (uploadedVersionKeys.add(key)) {
+                                        firestoreRepository.upsertCloudProject(localProj)
+                                    }
+                                }
+                            }
                         }
                     }
                     .map<List<CloudProject>, CloudSyncState> { cloudProjects ->
@@ -275,18 +287,29 @@ class EditorViewModel(
                     firestoreRepository.deleteCloudProject(sampleId)
                 }
                 _initialSeedFinished.value = true
+
+                val initialCloud = firestoreRepository.getCloudProjects(currentUserId).getOrNull()
+                    ?.filterNot { it.id in com.example.data.SampleProjects.SEEDED_SAMPLE_IDS }
+                    ?.map { it.toRoomEntity() }
+                if (initialCloud != null) {
+                    val toUpload = repository.mergeFromCloud(initialCloud)
+                    toUpload.forEach { localProj ->
+                        val key = "${localProj.id}:${localProj.updatedAt}"
+                        if (uploadedVersionKeys.add(key)) {
+                            firestoreRepository.upsertCloudProject(localProj)
+                        }
+                    }
+                }
             }
             @OptIn(FlowPreview::class)
             viewModelScope.launch {
-                var lastSyncedKey = ""
                 repository.currentProject
                     .drop(1)
                     .debounce(700L)
                     .collect { proj ->
                         if (proj.id != "__empty_draft__") {
                             val key = "${proj.id}:${proj.updatedAt}"
-                            if (key != lastSyncedKey) {
-                                lastSyncedKey = key
+                            if (uploadedVersionKeys.add(key)) {
                                 firestoreRepository.upsertCloudProject(proj)
                             }
                         }
@@ -301,6 +324,8 @@ class EditorViewModel(
         val repo = firestoreRepository ?: return
         val proj = currentProject.value
         if (proj.id == "__empty_draft__") return
+        val key = "${proj.id}:${proj.updatedAt}"
+        uploadedVersionKeys.add(key)
         viewModelScope.launch {
             repo.upsertCloudProject(proj)
         }
@@ -560,6 +585,53 @@ class EditorViewModel(
         syncCurrentProjectToCloud()
     }
 
+    fun toggleMoveKeyframe() {
+        val clipId = resolveTargetClipId() ?: return
+        _selectedClipId.value = clipId
+        _activeProperty.value = AnimatableProperty.POSITION_X
+        val clip = currentProject.value.findClip(clipId) ?: return
+        val curTime = playbackEngine.currentTimeMs.value
+        val curX = KeyframeEvaluator.evaluateProperty(clip, AnimatableProperty.POSITION_X, curTime)
+        val curY = KeyframeEvaluator.evaluateProperty(clip, AnimatableProperty.POSITION_Y, curTime)
+        val added = repository.toggleMoveKeyframe(clipId, curTime, curX, curY)
+        _undoToastMessage.value = if (added) "Added Move keyframe" else "Removed Move keyframe"
+        syncCurrentProjectToCloud()
+    }
+
+    fun deleteMoveKeyframeAtPlayhead() {
+        val clipId = resolveTargetClipId() ?: return
+        repository.deleteMoveKeyframeAtTime(clipId, playbackEngine.currentTimeMs.value)
+        _undoToastMessage.value = "Removed Move keyframe"
+        syncCurrentProjectToCloud()
+    }
+
+    fun clearMoveKeyframes() {
+        val clipId = resolveTargetClipId() ?: return
+        repository.clearMoveKeyframes(clipId)
+        _undoToastMessage.value = "Cleared Move keyframes"
+        syncCurrentProjectToCloud()
+    }
+
+    fun setMovePosition(posX: Float, posY: Float) {
+        val clipId = resolveTargetClipId() ?: return
+        _selectedClipId.value = clipId
+        repository.setMoveValues(clipId, playbackEngine.currentTimeMs.value, posX, posY)
+    }
+
+    fun updateMoveKeyframeEasing(relTimeMs: Long, easing: EasingType) {
+        val clipId = resolveTargetClipId() ?: return
+        repository.updateMoveKeyframeEasing(clipId, relTimeMs, easing)
+        syncCurrentProjectToCloud()
+    }
+
+    fun addQuickTextLayer() {
+        val created = repository.addQuickTextClip(playheadTimeMs = playbackEngine.currentTimeMs.value)
+        _selectedClipId.value = created.id
+        _activeToolTab.value = EditorToolTab.TEXT
+        _undoToastMessage.value = "Added Text Layer"
+        syncCurrentProjectToCloud()
+    }
+
     fun updateClipTransform(clipId: String, panX: Float, panY: Float, zoom: Float, rot: Float) {
         val curTime = playbackEngine.currentTimeMs.value
         repository.updateClipTransformByDelta(
@@ -617,6 +689,7 @@ class EditorViewModel(
             suite = preset.suite,
             category = preset.category,
             kernel = preset.kernel,
+            colorHex = preset.defaultColorHex,
             paramA = preset.defaultParamA,
             paramB = preset.defaultParamB,
             paramALabel = preset.paramALabel,
@@ -952,7 +1025,7 @@ class EditorViewModel(
         val clipTitle = clipId?.let { currentProject.value.findClip(it)?.title } ?: currentProject.value.title
         viewModelScope.launch {
             _isAiProcessing.value = true
-            _aiStatusMessage.value = "AI Upscaling to ${targetResolution.label}..."
+            _aiStatusMessage.value = "Optimizing resolution to ${targetResolution.label}..."
             try {
                 val profile = aiToolsManager.generateHdUpscaleProfile(
                     clipTitle = clipTitle,
@@ -965,7 +1038,7 @@ class EditorViewModel(
                     saturationBoost = profile.saturationBoost
                 )
                 _showUpscaleDialog.value = false
-                _aiSuccessFeedback.value = "Upscaled to ${targetResolution.label} — ${profile.clarityNote}"
+                _aiSuccessFeedback.value = "Output set to ${targetResolution.label} — ${profile.clarityNote}"
                 _undoToastMessage.value = "Upscaled output to ${targetResolution.label}"
                 syncCurrentProjectToCloud()
             } catch (e: CancellationException) {
@@ -978,31 +1051,51 @@ class EditorViewModel(
         }
     }
 
-    fun applyQuickRemoveBg() {
+    fun applyQuickRemoveBg(context: Context? = null) {
         val clipId = resolveTargetClipId()
         if (clipId == null) {
-            openAiStudioAtTab(0)
+            _undoToastMessage.value = "Add or select an image or video clip first"
             return
         }
         _selectedClipId.value = clipId
         val clip = currentProject.value.findClip(clipId) ?: return
         viewModelScope.launch {
             _isAiProcessing.value = true
-            _aiStatusMessage.value = "Removing background on '${clip.title}' with Gemini AI..."
+            _aiStatusMessage.value = "Removing background on '${clip.title}'..."
             try {
-                val result = aiToolsManager.removeBackgroundAndGenerateMask(
-                    clipTitle = clip.title,
-                    targetSubject = "Primary Subject",
-                    cutoutMode = "Transparent Cutout (Remove BG)"
-                )
-                repository.addMaskToClip(clipId, result.mask.copy(featherPx = 12f, expansion = 2f))
-                _aiSuccessFeedback.value = "Removed background for '${result.subjectLabel}'"
-                _undoToastMessage.value = "BG Removed: ${result.subjectLabel}"
+                val appContext = context?.applicationContext
+                val cutoutUri = if (appContext != null && (clip.mediaUri != null || clip.assetResId != null)) {
+                    AutoBackgroundRemover.removeBackground(appContext, clip).getOrNull()
+                } else null
+
+                if (cutoutUri != null) {
+                    repository.updateClip(clipId, "Remove Background") { c ->
+                        c.copy(
+                            mediaUri = cutoutUri,
+                            assetResId = null,
+                            colorHex = 0x00000000L
+                        )
+                    }
+                    _aiSuccessFeedback.value = "Background removed from '${clip.title}'"
+                    _undoToastMessage.value = "Background removed"
+                } else {
+                    repository.addMaskToClip(
+                        clipId,
+                        MaskConfig(
+                            name = "Auto Cutout",
+                            shapeType = MaskShapeType.CIRCLE,
+                            featherPx = 12f,
+                            expansion = 2f
+                        )
+                    )
+                    _aiSuccessFeedback.value = "Applied cutout mask to '${clip.title}'"
+                    _undoToastMessage.value = "Applied cutout mask"
+                }
                 syncCurrentProjectToCloud()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _aiStatusMessage.value = "Remove BG error: ${e.message}"
+                _undoToastMessage.value = "Remove BG failed: ${e.message}"
             } finally {
                 _isAiProcessing.value = false
             }
@@ -1066,7 +1159,7 @@ class EditorViewModel(
         val clip = currentProject.value.findClip(clipId) ?: return
         viewModelScope.launch {
             _isAiProcessing.value = true
-            _aiStatusMessage.value = "Analyzing video frames with Gemini AI for '$subject'..."
+            _aiStatusMessage.value = "Analyzing subject bounds for '$subject'..."
             try {
                 val result = aiToolsManager.removeBackgroundAndGenerateMask(
                     clipTitle = clip.title,

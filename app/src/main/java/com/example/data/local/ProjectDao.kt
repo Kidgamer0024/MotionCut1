@@ -19,6 +19,9 @@ interface ProjectDao {
     @Query("SELECT * FROM video_projects ORDER BY updatedAt DESC")
     fun getAllProjects(): Flow<List<ProjectEntity>>
 
+    @Query("SELECT * FROM video_projects ORDER BY updatedAt DESC")
+    suspend fun getAllProjectsSnapshot(): List<ProjectEntity>
+
     @Query("SELECT * FROM video_projects WHERE id = :id")
     suspend fun getProjectById(id: String): ProjectEntity?
 

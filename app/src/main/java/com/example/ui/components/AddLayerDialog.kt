@@ -33,9 +33,11 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -56,12 +58,10 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Rectangle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -108,7 +108,6 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.data.DeviceAudioItem
 import com.example.data.DeviceMediaItem
 import com.example.data.DeviceMediaScanner
-import com.example.data.SampleMusicLibrary
 import com.example.engine.AudioSynthesizerEngine
 import com.example.model.AnimatableProperty
 import com.example.model.ClipItem
@@ -192,8 +191,6 @@ fun AddLayerDialog(
     var audioSearchQuery by remember { mutableStateOf("") }
     var refreshTrigger by remember { mutableIntStateOf(0) }
 
-    var showSolidSwatches by remember { mutableStateOf(false) }
-
     // Load real device MediaStore, persisted picked media, and linked folders (no Studio sample videos)
     LaunchedEffect(refreshTrigger) {
         deviceMedia = DeviceMediaScanner.loadDeviceAndStudioMedia(context)
@@ -229,8 +226,6 @@ fun AddLayerDialog(
             refreshTrigger++
         }
     }
-
-    var show3DCreatorDialog by remember { mutableStateOf(false) }
 
     // Play-Policy Compliant Files Directory Picker (Photos / Videos / Audios folders)
     val folderTreeLauncher = rememberLauncherForActivityResult(
@@ -305,7 +300,6 @@ fun AddLayerDialog(
                                         .clickable(role = Role.Tab) {
                                             inlineTool = InlineRightTool.NONE
                                             activeTab = tab
-                                            showSolidSwatches = false
                                         }
                                         .padding(vertical = 4.dp)
                                         .testTag("add_tab_${tab.name.lowercase()}")
@@ -417,29 +411,18 @@ fun AddLayerDialog(
                                                 onSearchChange = { audioSearchQuery = it },
                                                 isPlayingPreview = isPlayingPreview,
                                                 currentPreviewId = currentPreviewTrackId,
-                                                onTogglePreview = { audioItem ->
-                                                    val engine = audioSynthesizerEngine ?: return@AudioCategoryContent
-                                                    if (audioItem.uriString != null) {
-                                                        engine.playAudioUri(
-                                                            context = context,
-                                                            id = audioItem.id,
-                                                            uriString = audioItem.uriString,
-                                                            durationMs = audioItem.durationMs
-                                                        )
-                                                    } else {
-                                                        val matchTrack = SampleMusicLibrary.getAllTracks()
-                                                            .find { "studio_${it.id}" == audioItem.id }
-                                                        if (matchTrack != null) {
-                                                            engine.playTrack(matchTrack)
-                                                        }
-                                                    }
-                                                },
-                                                onOpenMusicLibrary = {
-                                                    audioSynthesizerEngine?.stop()
-                                                    onDismiss()
-                                                    onOpenFullMusicLibrary()
-                                                },
-                                                onOpenVoiceRecord = {
+                                                 onTogglePreview = { audioItem ->
+                                                     val engine = audioSynthesizerEngine ?: return@AudioCategoryContent
+                                                     if (audioItem.uriString != null) {
+                                                         engine.playAudioUri(
+                                                             context = context,
+                                                             id = audioItem.id,
+                                                             uriString = audioItem.uriString,
+                                                             durationMs = audioItem.durationMs
+                                                         )
+                                                     }
+                                                 },
+                                                 onOpenVoiceRecord = {
                                                     audioSynthesizerEngine?.stop()
                                                     onDismiss()
                                                     onOpenVoiceRecorder()
@@ -492,25 +475,10 @@ fun AddLayerDialog(
 
                                         AddCategoryTab.ELEMENT -> {
                                             ElementCategoryContent(
-                                                showSolidSwatches = showSolidSwatches,
-                                                onToggleSolidSwatches = { showSolidSwatches = !showSolidSwatches },
-                                                onSelectSolidColor = { name, hex ->
-                                                    onAddClip(
-                                                        ClipItem(
-                                                            title = name,
-                                                            type = ClipType.COLOR_BG,
-                                                            colorHex = hex,
-                                                            startTimeMs = currentTimeMs,
-                                                            durationMs = 5000L
-                                                        )
-                                                    )
-                                                    onDismiss()
-                                                },
                                                 onSelectElement = { elementTitle, clip ->
                                                     onAddClip(clip.copy(title = elementTitle, startTimeMs = currentTimeMs))
                                                     onDismiss()
-                                                },
-                                                onOpen3DCreator = { show3DCreatorDialog = true }
+                                                }
                                             )
                                         }
 
@@ -607,18 +575,6 @@ fun AddLayerDialog(
                 }
             }
         }
-    }
-
-    if (show3DCreatorDialog) {
-        Add3DModelDialog(
-            currentTimeMs = currentTimeMs,
-            onCreate3DClip = { clip3d ->
-                onAddClip(clip3d)
-                show3DCreatorDialog = false
-                onDismiss()
-            },
-            onDismiss = { show3DCreatorDialog = false }
-        )
     }
 }
 
@@ -1137,7 +1093,6 @@ private fun AudioCategoryContent(
     isPlayingPreview: Boolean,
     currentPreviewId: String?,
     onTogglePreview: (DeviceAudioItem) -> Unit,
-    onOpenMusicLibrary: () -> Unit,
     onOpenVoiceRecord: () -> Unit,
     onBrowseDeviceAudio: () -> Unit,
     onBrowseAudioFolder: () -> Unit,
@@ -1195,7 +1150,7 @@ private fun AudioCategoryContent(
             }
         }
 
-        // Scrollable grid/rows matching Screenshot 4: Music circle, Record circle, All count tile + Device/Audio Cards
+        // Scrollable action row & device audio cards
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
@@ -1209,28 +1164,6 @@ private fun AudioCategoryContent(
                     verticalAlignment = Alignment.Top,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    item {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .minimumInteractiveComponentSize()
-                                .clickable(onClick = onOpenMusicLibrary)
-                                .testTag("audio_music_button")
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = AddEmerald,
-                                modifier = Modifier.size(56.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Search, contentDescription = "Music", tint = Color(0xFF06150D), modifier = Modifier.size(26.dp))
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text("Music", color = Color.White, fontSize = 12.sp)
-                        }
-                    }
-
                     item {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -1500,11 +1433,7 @@ private fun ShapeCategoryContent(
 
 @Composable
 private fun ElementCategoryContent(
-    showSolidSwatches: Boolean,
-    onToggleSolidSwatches: () -> Unit,
-    onSelectSolidColor: (String, Long) -> Unit,
-    onSelectElement: (String, ClipItem) -> Unit,
-    onOpen3DCreator: () -> Unit = {}
+    onSelectElement: (String, ClipItem) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -1513,29 +1442,13 @@ private fun ElementCategoryContent(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
+            columns = GridCells.Fixed(2),
             modifier = Modifier
                 .weight(1f)
                 .testTag("add_element_grid"),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            item {
-                ElementTileCard(
-                    tag = "element_solid",
-                    icon = Icons.Default.Rectangle,
-                    label = "Solid",
-                    onClick = onToggleSolidSwatches
-                )
-            }
-            item {
-                ElementTileCard(
-                    tag = "element_3d_model",
-                    icon = Icons.Default.ViewInAr,
-                    label = "3D model",
-                    onClick = onOpen3DCreator
-                )
-            }
             item {
                 ElementTileCard(
                     tag = "element_light",
@@ -1583,35 +1496,6 @@ private fun ElementCategoryContent(
                         )
                     }
                 )
-            }
-        }
-
-        if (showSolidSwatches) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf(
-                    "Obsidian" to 0xFF090C12,
-                    "Emerald" to 0xFF0D3824,
-                    "Cyber Blue" to 0xFF0A2444,
-                    "Crimson" to 0xFF581020
-                ).forEach { (name, hex) ->
-                    Surface(
-                        color = Color(hex),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, AddEmerald.copy(alpha = 0.5f)),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(40.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { onSelectSolidColor(name, hex) }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(name, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
             }
         }
     }
@@ -1689,10 +1573,10 @@ private fun TemplatesCategoryContent(
                 textColor = 0xFF00E5FF
             ),
             MotionTemplatePreset(
-                "tpl_neon_sign",
-                "Neon sign",
+                "tpl_glow_sign",
+                "Glow sign",
                 "Title",
-                "Neon text that flickers on with a strong glow; night vibe, for city and synthwave titles.",
+                "Title that pulses softly with a warm studio glow around clean typography.",
                 effectType = EffectType.GLOW,
                 textColor = 0xFFA855F7
             ),
@@ -1805,6 +1689,7 @@ private fun InlineTextCreatorPane(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -1812,7 +1697,8 @@ private fun InlineTextCreatorPane(
         OutlinedTextField(
             value = textValue,
             onValueChange = { textValue = it },
-            singleLine = true,
+            singleLine = false,
+            maxLines = 4,
             label = { Text("Caption / Title Text") },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = AddEmerald,
@@ -1877,7 +1763,7 @@ private fun InlineTextCreatorPane(
                 ) {}
             }
         }
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(8.dp))
         Button(
             onClick = {
                 val safeText = textValue.trim().ifBlank { "MOTION CUT" }
@@ -1923,6 +1809,7 @@ private fun InlineDrawCreatorPane(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -1944,7 +1831,7 @@ private fun InlineDrawCreatorPane(
                 ) {}
             }
         }
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(8.dp))
         Button(
             onClick = {
                 onAddDrawClip(
@@ -2018,7 +1905,7 @@ private fun buildClipFromTemplate(preset: MotionTemplatePreset, currentTimeMs: L
                     "tpl_typewriter" -> TextFontChoice.JETBRAINS_MONO
                     "tpl_lower_third" -> TextFontChoice.OSWALD
                     "tpl_glitch_intro" -> TextFontChoice.SPACE_GROTESK
-                    "tpl_neon_sign" -> TextFontChoice.RIGHTEOUS
+                    "tpl_glow_sign" -> TextFontChoice.RIGHTEOUS
                     else -> TextFontChoice.BEBAS_NEUE
                 },
                 animationType = when (preset.id) {
@@ -2027,7 +1914,7 @@ private fun buildClipFromTemplate(preset: MotionTemplatePreset, currentTimeMs: L
                     "tpl_typewriter" -> TextAnimationType.TYPEWRITER
                     "tpl_lower_third" -> TextAnimationType.SLIDE_UP
                     "tpl_glitch_intro" -> TextAnimationType.GLITCH_FLICKER
-                    "tpl_neon_sign" -> TextAnimationType.FADE_POP
+                    "tpl_glow_sign" -> TextAnimationType.FADE_POP
                     "tpl_light_sweep" -> TextAnimationType.TRACKING_REVEAL
                     else -> TextAnimationType.ZOOM_BURST
                 },

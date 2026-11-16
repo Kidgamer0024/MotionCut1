@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import java.util.Collections
+import java.util.Locale
 import java.util.UUID
 
 class ProjectRepository(
@@ -85,6 +87,8 @@ class ProjectRepository(
     val lastUndoDescription: StateFlow<String?> = actionStack.lastUndoDescription
     val lastRedoDescription: StateFlow<String?> = actionStack.lastRedoDescription
 
+    private val locallyDeletedIds = Collections.synchronizedSet(mutableSetOf<String>())
+
     init {
         if (projectDao != null) {
             scope.launch {
@@ -123,14 +127,57 @@ class ProjectRepository(
         }
     }
 
-    fun syncFromCloud(cloudEntities: List<ProjectEntity>) {
-        val filteredEntities = if (seedSampleProjects) {
-            cloudEntities
-        } else {
-            cloudEntities.filterNot { it.id in SampleProjects.SEEDED_SAMPLE_IDS }
+    private fun mergeEntitiesNonDestructive(
+        localEntities: List<ProjectEntity>,
+        cloudEntities: List<ProjectEntity>
+    ): Pair<List<ProjectEntity>, List<Project>> {
+        val visibleLocal = localEntities.filterNot {
+            (!seedSampleProjects && it.id in SampleProjects.SEEDED_SAMPLE_IDS) || it.id in locallyDeletedIds
         }
+        val visibleCloud = cloudEntities.filterNot {
+            (!seedSampleProjects && it.id in SampleProjects.SEEDED_SAMPLE_IDS) || it.id in locallyDeletedIds
+        }
+        val localById = visibleLocal.associateBy { it.id }
+        val cloudById = visibleCloud.associateBy { it.id }
+        val allIds = (localById.keys + cloudById.keys).distinct()
         val currentMemoryProjects = _projects.value
-        val updatedProjects = filteredEntities.map { entity ->
+
+        val mergedEntities = mutableListOf<ProjectEntity>()
+        val toUpload = mutableListOf<Project>()
+
+        for (id in allIds) {
+            val local = localById[id]
+            val cloud = cloudById[id]
+            when {
+                local != null && cloud == null -> {
+                    mergedEntities.add(local)
+                    toUpload.add(ProjectMappers.toProject(local, currentMemoryProjects.find { it.id == id }))
+                }
+                local == null && cloud != null -> {
+                    mergedEntities.add(cloud)
+                }
+                local != null && cloud != null -> {
+                    if (local.updatedAt > cloud.updatedAt + 1000L) {
+                        val safeEntity = if (local.projectJson.isBlank() && cloud.projectJson.isNotBlank()) {
+                            local.copy(projectJson = cloud.projectJson)
+                        } else local
+                        mergedEntities.add(safeEntity)
+                        toUpload.add(ProjectMappers.toProject(safeEntity, currentMemoryProjects.find { it.id == id }))
+                    } else {
+                        val safeEntity = if (cloud.projectJson.isBlank() && local.projectJson.isNotBlank()) {
+                            cloud.copy(projectJson = local.projectJson)
+                        } else cloud
+                        mergedEntities.add(safeEntity)
+                    }
+                }
+            }
+        }
+        return mergedEntities.sortedByDescending { it.updatedAt } to toUpload
+    }
+
+    private fun applyMergedEntities(mergedEntities: List<ProjectEntity>) {
+        val currentMemoryProjects = _projects.value
+        val updatedProjects = mergedEntities.map { entity ->
             val existing = currentMemoryProjects.find { it.id == entity.id }
             ProjectMappers.toProject(entity, existing)
         }
@@ -156,13 +203,51 @@ class ProjectRepository(
             actionStack.clear()
             _currentProject.value = emptyDraftProject
         }
+    }
+
+    suspend fun mergeFromCloud(cloudEntities: List<ProjectEntity>): List<Project> {
+        val dbSnapshot = projectDao?.getAllProjectsSnapshot() ?: _fallbackEntities.value
+        val memoryEntities = _projects.value
+            .filter { it.id != emptyDraftProject.id }
+            .map { ProjectMappers.toEntity(it) }
+        val combinedLocal = (dbSnapshot + memoryEntities)
+            .groupBy { it.id }
+            .values
+            .map { group -> group.maxBy { it.updatedAt } }
+
+        val (mergedEntities, toUpload) = mergeEntitiesNonDestructive(combinedLocal, cloudEntities)
+        applyMergedEntities(mergedEntities)
 
         if (projectDao != null) {
-            scope.launch {
-                projectDao.replaceAllProjects(filteredEntities)
+            if (mergedEntities.isNotEmpty()) {
+                projectDao.insertProjects(mergedEntities)
             }
         } else {
-            _fallbackEntities.value = filteredEntities
+            _fallbackEntities.value = mergedEntities
+        }
+        return toUpload
+    }
+
+    fun syncFromCloud(cloudEntities: List<ProjectEntity>) {
+        val memoryEntities = _projects.value
+            .filter { it.id != emptyDraftProject.id }
+            .map { ProjectMappers.toEntity(it) }
+        val combinedLocal = (_fallbackEntities.value + memoryEntities)
+            .groupBy { it.id }
+            .values
+            .map { group -> group.maxBy { it.updatedAt } }
+
+        val (mergedEntities, _) = mergeEntitiesNonDestructive(combinedLocal, cloudEntities)
+        applyMergedEntities(mergedEntities)
+
+        if (projectDao != null) {
+            if (mergedEntities.isNotEmpty()) {
+                scope.launch {
+                    projectDao.insertProjects(mergedEntities)
+                }
+            }
+        } else {
+            _fallbackEntities.value = mergedEntities
         }
     }
 
@@ -224,6 +309,7 @@ class ProjectRepository(
     }
 
     fun deleteProject(projectId: String) {
+        locallyDeletedIds.add(projectId)
         // 1. Delete from Room Database
         if (projectDao != null) {
             scope.launch {
@@ -283,6 +369,7 @@ class ProjectRepository(
     }
 
     fun createNewProject(project: Project) {
+        locallyDeletedIds.remove(project.id)
         val updatedList = listOf(project) + _projects.value
         _projects.value = updatedList
         actionStack.clear()
@@ -300,12 +387,26 @@ class ProjectRepository(
 
     fun addClipToTrack(trackId: String, clip: ClipItem) {
         val cur = _currentProject.value
+        val lowerHint = (clip.mediaUri ?: clip.title).lowercase(Locale.US).substringBefore('?')
+        val ext = lowerHint.substringAfterLast('.', "")
+        val isStillImage = clip.type == com.example.model.ClipType.VIDEO_SAMPLE &&
+            (ext in setOf("png", "jpg", "jpeg", "webp", "heic", "heif", "gif", "bmp") ||
+                lowerHint.contains("/images/") ||
+                clip.colorHex == 0x00000000L)
+        val mainTrack = cur.tracks.find { it.type == TrackType.MAIN_VIDEO }
+        val mainHasOverlap = mainTrack?.clips?.any { existing ->
+            existing.startTimeMs < clip.endTimeMs && clip.startTimeMs < existing.endTimeMs
+        } == true
+
         val desiredType = when (clip.type) {
             com.example.model.ClipType.AUDIO -> TrackType.AUDIO
             com.example.model.ClipType.TEXT,
             com.example.model.ClipType.SHAPE,
             com.example.model.ClipType.MODEL_3D -> TrackType.TEXT_STICKER
             com.example.model.ClipType.ADJUSTMENT, com.example.model.ClipType.NULL_OBJECT -> TrackType.EFFECTS
+            com.example.model.ClipType.VIDEO_SAMPLE -> {
+                if (isStillImage && mainHasOverlap) TrackType.OVERLAY else TrackType.MAIN_VIDEO
+            }
             else -> TrackType.MAIN_VIDEO
         }
         val targetTrack = cur.tracks.find { it.id == trackId }
@@ -330,6 +431,31 @@ class ProjectRepository(
         }
         val label = if (clip.title.isNotBlank()) "Add '${clip.title}'" else "Add ${clip.type.label}"
         updateCurrentProject(cur.copy(tracks = updatedTracks), label)
+    }
+
+    fun addQuickTextClip(
+        text: String = "Tap to edit text",
+        playheadTimeMs: Long
+    ): ClipItem {
+        val newClip = ClipItem(
+            id = UUID.randomUUID().toString(),
+            trackId = "",
+            title = text.take(28).ifBlank { "New Text" },
+            type = com.example.model.ClipType.TEXT,
+            startTimeMs = playheadTimeMs.coerceAtLeast(0L),
+            durationMs = 4000L,
+            textConfig = com.example.model.TextConfig(
+                text = text.ifBlank { "Tap to edit text" },
+                fontSizeSp = 30f,
+                textColor = 0xFFFFFFFF,
+                isBold = true,
+                strokeColor = 0xFF000000,
+                strokeWidth = 3f,
+                shadowEnabled = true
+            )
+        )
+        addClipToTrack("", newClip)
+        return _currentProject.value.findClip(newClip.id) ?: newClip
     }
 
     fun updateClip(
@@ -724,6 +850,123 @@ class ProjectRepository(
             }
             val updatedMap = clip.keyframeTracks.toMutableMap()
             updatedMap[property] = track.copy(keyframes = updatedKeyframes)
+            clip.copy(keyframeTracks = updatedMap)
+        }
+    }
+
+    fun toggleMoveKeyframe(clipId: String, playheadTimeMs: Long, currentX: Float, currentY: Float): Boolean {
+        var added = false
+        updateClip(clipId, "Toggle Move Keyframe") { clip ->
+            val relTime = (playheadTimeMs - clip.startTimeMs).coerceIn(0L, clip.durationMs)
+            val xTrack = clip.keyframeTracks[AnimatableProperty.POSITION_X] ?: KeyframeTrack(AnimatableProperty.POSITION_X)
+            val yTrack = clip.keyframeTracks[AnimatableProperty.POSITION_Y] ?: KeyframeTrack(AnimatableProperty.POSITION_Y)
+            val existingX = xTrack.getKeyframeAt(relTime, toleranceMs = 160L)
+            val existingY = yTrack.getKeyframeAt(relTime, toleranceMs = 160L)
+            val updatedMap = clip.keyframeTracks.toMutableMap()
+
+            if (existingX != null || existingY != null) {
+                added = false
+                val remX = xTrack.keyframes.filter { it.id != existingX?.id }
+                val remY = yTrack.keyframes.filter { it.id != existingY?.id }
+                if (remX.isEmpty()) updatedMap.remove(AnimatableProperty.POSITION_X)
+                else updatedMap[AnimatableProperty.POSITION_X] = xTrack.copy(keyframes = remX)
+                if (remY.isEmpty()) updatedMap.remove(AnimatableProperty.POSITION_Y)
+                else updatedMap[AnimatableProperty.POSITION_Y] = yTrack.copy(keyframes = remY)
+            } else {
+                added = true
+                val bez = EasingType.CubicBezier(0.42f, 0.0f, 0.58f, 1.0f)
+                val newX = Keyframe(
+                    timeMs = relTime,
+                    value = currentX.coerceIn(AnimatableProperty.POSITION_X.minVal, AnimatableProperty.POSITION_X.maxVal),
+                    easing = bez
+                )
+                val newY = Keyframe(
+                    timeMs = relTime,
+                    value = currentY.coerceIn(AnimatableProperty.POSITION_Y.minVal, AnimatableProperty.POSITION_Y.maxVal),
+                    easing = bez
+                )
+                updatedMap[AnimatableProperty.POSITION_X] = xTrack.copy(keyframes = (xTrack.keyframes + newX).sortedBy { it.timeMs })
+                updatedMap[AnimatableProperty.POSITION_Y] = yTrack.copy(keyframes = (yTrack.keyframes + newY).sortedBy { it.timeMs })
+            }
+            clip.copy(keyframeTracks = updatedMap)
+        }
+        return added
+    }
+
+    fun deleteMoveKeyframeAtTime(clipId: String, playheadTimeMs: Long) {
+        updateClip(clipId, "Delete Move Keyframe") { clip ->
+            val relTime = (playheadTimeMs - clip.startTimeMs).coerceIn(0L, clip.durationMs)
+            val updatedMap = clip.keyframeTracks.toMutableMap()
+            listOf(AnimatableProperty.POSITION_X, AnimatableProperty.POSITION_Y).forEach { prop ->
+                val track = updatedMap[prop] ?: return@forEach
+                val target = track.getKeyframeAt(relTime, toleranceMs = 160L) ?: return@forEach
+                val remaining = track.keyframes.filter { it.id != target.id }
+                if (remaining.isEmpty()) updatedMap.remove(prop)
+                else updatedMap[prop] = track.copy(keyframes = remaining)
+            }
+            clip.copy(keyframeTracks = updatedMap)
+        }
+    }
+
+    fun clearMoveKeyframes(clipId: String) {
+        updateClip(clipId, "Clear Move Keyframes") { clip ->
+            val updatedMap = clip.keyframeTracks.toMutableMap()
+            updatedMap.remove(AnimatableProperty.POSITION_X)
+            updatedMap.remove(AnimatableProperty.POSITION_Y)
+            clip.copy(keyframeTracks = updatedMap)
+        }
+    }
+
+    fun setMoveValues(clipId: String, playheadTimeMs: Long, posX: Float, posY: Float) {
+        val clampedX = posX.coerceIn(AnimatableProperty.POSITION_X.minVal, AnimatableProperty.POSITION_X.maxVal)
+        val clampedY = posY.coerceIn(AnimatableProperty.POSITION_Y.minVal, AnimatableProperty.POSITION_Y.maxVal)
+        updateClip(clipId, "Adjust Move", coalesceIntervalMs = 200L) { clip ->
+            val relTime = (playheadTimeMs - clip.startTimeMs).coerceIn(0L, clip.durationMs)
+            val xTrack = clip.keyframeTracks[AnimatableProperty.POSITION_X]
+            val yTrack = clip.keyframeTracks[AnimatableProperty.POSITION_Y]
+            val hasAnyMoveKf = !xTrack?.keyframes.isNullOrEmpty() || !yTrack?.keyframes.isNullOrEmpty()
+            val updatedMap = clip.keyframeTracks.toMutableMap()
+
+            if (hasAnyMoveKf) {
+                val activeX = xTrack ?: KeyframeTrack(AnimatableProperty.POSITION_X)
+                val existingX = activeX.getKeyframeAt(relTime, toleranceMs = 160L)
+                val nextX = if (existingX != null) {
+                    activeX.keyframes.map { if (it.id == existingX.id) it.copy(value = clampedX) else it }
+                } else {
+                    (activeX.keyframes + Keyframe(timeMs = relTime, value = clampedX, easing = EasingType.CubicBezier(0.42f, 0.0f, 0.58f, 1.0f))).sortedBy { it.timeMs }
+                }
+                updatedMap[AnimatableProperty.POSITION_X] = activeX.copy(keyframes = nextX)
+
+                val activeY = yTrack ?: KeyframeTrack(AnimatableProperty.POSITION_Y)
+                val existingY = activeY.getKeyframeAt(relTime, toleranceMs = 160L)
+                val nextY = if (existingY != null) {
+                    activeY.keyframes.map { if (it.id == existingY.id) it.copy(value = clampedY) else it }
+                } else {
+                    (activeY.keyframes + Keyframe(timeMs = relTime, value = clampedY, easing = EasingType.CubicBezier(0.42f, 0.0f, 0.58f, 1.0f))).sortedBy { it.timeMs }
+                }
+                updatedMap[AnimatableProperty.POSITION_Y] = activeY.copy(keyframes = nextY)
+            }
+
+            clip.copy(
+                baseTransform = if (hasAnyMoveKf) clip.baseTransform else clip.baseTransform.copy(
+                    positionX = clampedX,
+                    positionY = clampedY
+                ),
+                keyframeTracks = updatedMap
+            )
+        }
+    }
+
+    fun updateMoveKeyframeEasing(clipId: String, relTimeMs: Long, easing: EasingType) {
+        updateClip(clipId, "Change Move Keyframe Curve") { clip ->
+            val updatedMap = clip.keyframeTracks.toMutableMap()
+            listOf(AnimatableProperty.POSITION_X, AnimatableProperty.POSITION_Y).forEach { prop ->
+                val track = updatedMap[prop] ?: return@forEach
+                val target = track.getKeyframeAt(relTimeMs, toleranceMs = 160L) ?: return@forEach
+                updatedMap[prop] = track.copy(
+                    keyframes = track.keyframes.map { if (it.id == target.id) it.copy(easing = easing) else it }
+                )
+            }
             clip.copy(keyframeTracks = updatedMap)
         }
     }
