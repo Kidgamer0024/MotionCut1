@@ -98,9 +98,15 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
+@SuppressLint("DiscouragedApi")
 private fun resolveDefaultWebClientId(context: Context): String? {
     return try {
-        context.getString(R.string.default_web_client_id).takeIf { it.isNotBlank() }
+        val resId = context.resources.getIdentifier(
+            "default_web_client_id",
+            "string",
+            context.packageName
+        )
+        if (resId != 0) context.getString(resId).takeIf { it.isNotBlank() } else null
     } catch (_: Exception) {
         null
     }

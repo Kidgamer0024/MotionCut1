@@ -1,9 +1,5 @@
 package com.example.ui.components
 
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -71,9 +67,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.content.ContextCompat
 import com.example.engine.RecordedVoiceOver
 import com.example.engine.VoiceOverRecorderEngine
+import com.example.util.MediaRecordingFeature
+import com.example.util.rememberMediaPermissionState
 import com.example.ui.theme.CutRose
 import com.example.ui.theme.KeyframeViolet
 import com.example.ui.theme.MotionCyan
@@ -93,23 +90,14 @@ fun VoiceOverRecordSheet(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var hasRecordPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.RECORD_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED
-        )
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasRecordPermission = isGranted
-        if (isGranted) {
+    val micPermissionState = rememberMediaPermissionState(
+        feature = MediaRecordingFeature.MICROPHONE_ONLY
+    ) { granted, _ ->
+        if (granted) {
             recorderEngine.startRecording(context)
         }
     }
+    val hasRecordPermission = micPermissionState.hasMicrophonePermission
 
     val isRecording by recorderEngine.isRecording.collectAsState()
     val isPaused by recorderEngine.isPaused.collectAsState()
@@ -288,25 +276,43 @@ fun VoiceOverRecordSheet(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "To record live voice-over commentary directly synchronized with your video, please grant microphone permissions.",
+                                text = if (micPermissionState.isPermanentlyDenied) {
+                                    "Microphone access was disabled in system settings. Enable Microphone permission in App Settings to record voice-overs."
+                                } else {
+                                    "To record live voice-over commentary directly synchronized with your video, please grant microphone permissions."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.LightGray,
                                 fontSize = 11.sp,
                                 lineHeight = 16.sp
                             )
                             Spacer(modifier = Modifier.height(14.dp))
-                            Button(
-                                onClick = {
-                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = PlayheadAmber,
-                                    contentColor = Color.Black
-                                ),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.fillMaxWidth().testTag("grant_mic_permission_button")
-                            ) {
-                                Text("Grant Microphone Access", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            if (micPermissionState.isPermanentlyDenied) {
+                                Button(
+                                    onClick = { micPermissionState.openAppSettings() },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = PlayheadAmber,
+                                        contentColor = Color.Black
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth().testTag("open_mic_settings_button")
+                                ) {
+                                    Text("Open App Settings", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            } else {
+                                Button(
+                                    onClick = {
+                                        micPermissionState.launchRequest(MediaRecordingFeature.MICROPHONE_ONLY)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = PlayheadAmber,
+                                        contentColor = Color.Black
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth().testTag("grant_mic_permission_button")
+                                ) {
+                                    Text("Grant Microphone Access", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
                             }
                         }
                     }

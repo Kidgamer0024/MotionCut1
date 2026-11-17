@@ -1341,6 +1341,48 @@ class MotionCutTest {
         assertTrue("Expected cloud_proj merged", "cloud_proj" in ids)
         assertFalse("Expected deleted_id suppressed", "deleted_id" in ids)
     }
+
+    @Test
+    fun testMediaPermissionHelperAndManifestDeclarations() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val pkgInfo = app.packageManager.getPackageInfo(
+            app.packageName,
+            android.content.pm.PackageManager.GET_PERMISSIONS
+        )
+        val requested = pkgInfo.requestedPermissions?.toSet().orEmpty()
+        assertTrue("Expected CAMERA permission in manifest", android.Manifest.permission.CAMERA in requested)
+        assertTrue("Expected RECORD_AUDIO permission in manifest", android.Manifest.permission.RECORD_AUDIO in requested)
+
+        val shadowApp = org.robolectric.Shadows.shadowOf(app)
+        val helper = com.example.util.MediaPermissionHelper(app)
+
+        // Initially neither permission granted
+        shadowApp.denyPermissions(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO)
+        assertFalse(helper.hasCameraPermission())
+        assertFalse(helper.hasMicrophonePermission())
+        assertEquals(2, helper.getMissingPermissions(com.example.util.MediaRecordingFeature.CAMERA_AND_MICROPHONE).size)
+        assertTrue(helper.isPermanentlyDenied(activity = null, feature = com.example.util.MediaRecordingFeature.CAMERA_ONLY, hasRequestedBefore = true))
+        assertFalse(helper.isPermanentlyDenied(activity = null, feature = com.example.util.MediaRecordingFeature.CAMERA_ONLY, hasRequestedBefore = false))
+
+        // Grant microphone only
+        shadowApp.grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+        assertTrue(helper.hasRequiredPermissions(com.example.util.MediaRecordingFeature.MICROPHONE_ONLY))
+        assertFalse(helper.hasRequiredPermissions(com.example.util.MediaRecordingFeature.CAMERA_AND_MICROPHONE))
+        assertEquals(listOf(android.Manifest.permission.CAMERA), helper.getMissingPermissions(com.example.util.MediaRecordingFeature.CAMERA_AND_MICROPHONE).toList())
+
+        // Grant camera as well
+        shadowApp.grantPermissions(android.Manifest.permission.CAMERA)
+        val fullSnapshot = helper.evaluateFeature(com.example.util.MediaRecordingFeature.CAMERA_AND_MICROPHONE)
+        assertTrue(fullSnapshot.hasCameraPermission)
+        assertTrue(fullSnapshot.hasMicrophonePermission)
+        assertTrue(fullSnapshot.isFullyGranted)
+        assertTrue(fullSnapshot.missingPermissions.isEmpty())
+
+        // Verify App Settings fallback intent
+        val settingsIntent = helper.createAppSettingsIntent()
+        assertEquals(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, settingsIntent.action)
+        assertEquals("package:${app.packageName}", settingsIntent.dataString)
+    }
 }
 
 
