@@ -60,20 +60,52 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Restore debug keystore
+      - name: Restore cached CI debug keystore
+        id: keystore_cache
+        uses: actions/cache@v4
+        with:
+          path: ./debug.keystore
+          key: motioncut-ci-debug-keystore-${{ github.repository_id }}-v1
+
+      - name: Restore Firebase config (optional secret)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f "./debug.keystore" ]; then
-            echo "Debug keystore check: ./debug.keystore already exists."
-          elif [ -f "./debug.keystore.base64" ]; then
-            base64 --decode ./debug.keystore.base64 > ./debug.keystore
-            echo "Restored persistent ./debug.keystore from ./debug.keystore.base64."
-          else
-            KEYTOOL_BIN="keytool"
-            if [ -n "${JAVA_HOME:-}" ] && [ -x "${JAVA_HOME}/bin/keytool" ]; then
-              KEYTOOL_BIN="${JAVA_HOME}/bin/keytool"
+          if [ ! -f "./app/google-services.json" ]; then
+            if [ -n "${GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
+              printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | tr -d '[:space:]' | base64 --decode > ./app/google-services.json
+              echo "Restored app/google-services.json from GOOGLE_SERVICES_JSON_BASE64 secret."
+            elif [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then
+              printf '%s' "$GOOGLE_SERVICES_JSON" > ./app/google-services.json
+              echo "Restored app/google-services.json from GOOGLE_SERVICES_JSON secret."
+            else
+              echo "app/google-services.json not present in CI workspace (building with MissingGoogleServicesStrategy.WARN)."
             fi
+          fi
+
+      - name: Restore or generate debug keystore
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYTOOL_BIN="keytool"
+          if [ -n "${JAVA_HOME:-}" ] && [ -x "${JAVA_HOME}/bin/keytool" ]; then
+            KEYTOOL_BIN="${JAVA_HOME}/bin/keytool"
+          fi
+
+          if [ -n "${DEBUG_KEYSTORE_BASE64:-}" ]; then
+            printf '%s' "$DEBUG_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > ./debug.keystore
+            echo "Restored ./debug.keystore from DEBUG_KEYSTORE_BASE64 repository secret."
+          elif [ -f "./debug.keystore.base64" ]; then
+            tr -d '[:space:]' < ./debug.keystore.base64 | base64 --decode > ./debug.keystore
+            echo "Restored persistent ./debug.keystore from ./debug.keystore.base64."
+          elif [ -f "./debug.keystore" ] && [ -s "./debug.keystore" ]; then
+            echo "Restored persistent ./debug.keystore from GitHub Actions cache."
+          else
             "$KEYTOOL_BIN" -genkeypair \
               -keystore ./debug.keystore \
               -storepass android \
@@ -86,13 +118,16 @@ jobs:
                 echo "::error::Failed to create fallback debug keystore at ./debug.keystore."
                 exit 1
               }
-            echo "::warning::debug.keystore.base64 was missing; generated a fallback debug keystore."
+            echo "Generated initial CI ./debug.keystore (will be cached for future runs)."
           fi
 
           if [ ! -f "./debug.keystore" ] || [ ! -s "./debug.keystore" ]; then
             echo "::error::Expected ./debug.keystore is missing or empty."
             exit 1
           fi
+
+          "$KEYTOOL_BIN" -list -v -keystore ./debug.keystore -storepass android 2>/dev/null \
+            | grep -E "Alias name:|SHA1:|SHA256:" || true
           echo "Debug keystore verified."
 
       - name: Build debug APK
