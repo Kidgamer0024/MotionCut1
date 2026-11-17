@@ -160,7 +160,12 @@ class AudioSynthesizerEngine(
                             .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                             .build()
                     )
-                    setDataSource(context, Uri.parse(uriString))
+                    val parsedUri = Uri.parse(uriString)
+                    if (parsedUri.scheme == "file" && !parsedUri.path.isNullOrBlank()) {
+                        setDataSource(parsedUri.path)
+                    } else {
+                        setDataSource(context, parsedUri)
+                    }
                     prepare()
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         runCatching {

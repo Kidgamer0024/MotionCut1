@@ -906,16 +906,32 @@ class EditorViewModel(
     // --- VOICE-OVER RECORDING ACTIONS ---
     fun setShowVoiceOverSheet(show: Boolean) {
         _showVoiceOverSheet.value = show
-        if (!show && voiceOverRecorderEngine.isRecording.value) {
-            voiceOverRecorderEngine.stopRecording()
+        if (show) {
+            playbackEngine.pause()
+            audioSynthesizerEngine.stop()
+            voiceOverRecorderEngine.clearLastRecording()
+        } else {
+            audioSynthesizerEngine.stop()
+            if (voiceOverRecorderEngine.isRecording.value) {
+                voiceOverRecorderEngine.stopRecording()
+            }
         }
     }
 
     fun importRecordedVoiceOverToTimeline(voiceOver: RecordedVoiceOver) {
         val playhead = playbackEngine.currentTimeMs.value
         repository.importVoiceOverToProject(voiceOver, playhead)
+        playbackEngine.setDuration(currentProject.value.durationMs)
+        val inserted = currentProject.value.tracks
+            .filter { it.type == com.example.model.TrackType.AUDIO }
+            .flatMap { it.clips }
+            .lastOrNull()
+        if (inserted != null) {
+            _selectedClipId.value = inserted.id
+        }
+        playbackEngine.seek(playhead)
+        voiceOverRecorderEngine.clearLastRecording()
         setShowVoiceOverSheet(false)
-        playbackEngine.seek(playhead + voiceOver.durationMs)
         syncCurrentProjectToCloud()
     }
 

@@ -1204,6 +1204,7 @@ class ProjectRepository(
             trackId = audioTrack?.id ?: "track_voiceovers",
             title = "🎙️ ${voiceOver.title}",
             type = com.example.model.ClipType.AUDIO,
+            mediaUri = voiceOver.fileUri,
             colorHex = 0xFF8E24AA,
             startTimeMs = playheadTimeMs,
             durationMs = voiceOver.durationMs,
@@ -1225,7 +1226,11 @@ class ProjectRepository(
             cur.tracks + createdTrack
         }
 
-        updateCurrentProject(cur.copy(tracks = updatedTracks), "Record ${voiceOver.title}")
+        val updatedDuration = maxOf(cur.durationMs, playheadTimeMs + voiceOver.durationMs)
+        updateCurrentProject(
+            cur.copy(tracks = updatedTracks, durationMs = updatedDuration),
+            "Record ${voiceOver.title}"
+        )
     }
 
     // --- AI KINETIC CAPTIONS INSERTION ---

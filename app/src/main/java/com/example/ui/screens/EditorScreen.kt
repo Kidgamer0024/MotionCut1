@@ -45,6 +45,7 @@ import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -60,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.engine.TimelineAudioPlayer
 import com.example.model.AnimatableProperty
 import com.example.model.AspectRatio
 import com.example.model.ColorGradingSettings
@@ -147,9 +149,25 @@ fun EditorScreen(
     val lastRedoDesc by viewModel.lastRedoDescription.collectAsState()
     val undoToastMessage by viewModel.undoToastMessage.collectAsState()
 
+    val playbackSpeed by viewModel.playbackEngine.playbackSpeed.collectAsState()
     val isCameraTracking by viewModel.isCameraTracking.collectAsState()
     val cameraTrackingStatus by viewModel.cameraTrackingStatus.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    val timelineAudioPlayer = remember(context) { TimelineAudioPlayer(context) }
+    DisposableEffect(timelineAudioPlayer) {
+        onDispose {
+            timelineAudioPlayer.releaseAll()
+        }
+    }
+    LaunchedEffect(isPlaying, currentTimeMs / 50L, project, playbackSpeed) {
+        timelineAudioPlayer.sync(
+            project = project,
+            isPlaying = isPlaying,
+            currentTimeMs = currentTimeMs,
+            globalSpeed = playbackSpeed
+        )
+    }
 
     val resolvedTargetClipId = viewModel.resolveTargetClipId()
     val resolvedTargetClip = resolvedTargetClipId?.let { project.findClip(it) }
@@ -832,7 +850,8 @@ fun EditorScreen(
                 onImportVoiceOver = { voiceOver ->
                     viewModel.importRecordedVoiceOverToTimeline(voiceOver)
                 },
-                onDismiss = { viewModel.setShowVoiceOverSheet(false) }
+                onDismiss = { viewModel.setShowVoiceOverSheet(false) },
+                audioSynthesizerEngine = viewModel.audioSynthesizerEngine
             )
         }
     }

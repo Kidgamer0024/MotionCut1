@@ -313,7 +313,8 @@ class MotionCutTest {
         val recordedVoiceOver = com.example.engine.RecordedVoiceOver(
             title = "Voiceover 1",
             durationMs = 4200L,
-            waveformPoints = listOf(0.1f, 0.45f, 0.8f, 0.6f, 0.2f)
+            waveformPoints = listOf(0.1f, 0.45f, 0.8f, 0.6f, 0.2f),
+            fileUri = "file:///data/user/0/com.aistudio.motioncut.vfxpro/files/voiceovers/voiceover_test.wav"
         )
 
         repo.importVoiceOverToProject(recordedVoiceOver, playheadTimeMs = 2000L)
@@ -326,7 +327,9 @@ class MotionCutTest {
         assertNotNull(voClip)
         assertEquals(2000L, voClip!!.startTimeMs)
         assertEquals(4200L, voClip.durationMs)
+        assertEquals(recordedVoiceOver.fileUri, voClip.mediaUri)
         assertEquals(5, voClip.waveformSamples.size)
+        assertTrue(proj.durationMs >= 6200L)
         assertTrue(repo.canUndo.value)
 
         // Test undoing voice-over insertion
@@ -1383,6 +1386,51 @@ class MotionCutTest {
         assertEquals(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, settingsIntent.action)
         assertEquals("package:${app.packageName}", settingsIntent.dataString)
     }
+
+    @Test
+    fun testVoiceOverEngineLifecycleAndTimelineAudioSync() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val shadowApp = org.robolectric.Shadows.shadowOf(app)
+        val recorder = com.example.engine.VoiceOverRecorderEngine(this)
+
+        // Denied permission blocks recording with descriptive error
+        shadowApp.denyPermissions(android.Manifest.permission.RECORD_AUDIO)
+        assertFalse(recorder.startRecording(app))
+        assertFalse(recorder.isRecording.value)
+        assertNotNull(recorder.recorderError.value)
+
+        // Granted permission starts recording; pause/resume/stop/clear work cleanly
+        shadowApp.grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+        assertTrue(recorder.startRecording(app))
+        assertTrue(recorder.isRecording.value)
+
+        recorder.pauseRecording()
+        assertTrue(recorder.isPaused.value)
+        recorder.resumeRecording()
+        assertFalse(recorder.isPaused.value)
+
+        val stopped = recorder.stopRecording()
+        assertNotNull(stopped)
+        assertFalse(recorder.isRecording.value)
+        assertTrue(stopped!!.durationMs >= 800L)
+
+        recorder.clearLastRecording()
+        assertTrue(recorder.lastRecordedVoiceOver.value == null)
+
+        // TimelineAudioPlayer handles paused state and nonexistent/active clips safely
+        val audioPlayer = com.example.engine.TimelineAudioPlayer(app)
+        val repo = ProjectRepository(seedSampleProjects = true)
+        repo.importVoiceOverToProject(
+            com.example.engine.RecordedVoiceOver(
+                title = "Voiceover Missing File",
+                durationMs = 2000L,
+                waveformPoints = listOf(0.2f, 0.5f),
+                fileUri = "file:///tmp/does_not_exist_vo.wav"
+            ),
+            playheadTimeMs = 0L
+        )
+        audioPlayer.sync(repo.currentProject.value, isPlaying = true, currentTimeMs = 500L)
+        audioPlayer.sync(repo.currentProject.value, isPlaying = false, currentTimeMs = 500L)
+        audioPlayer.releaseAll()
+    }
 }
-
-

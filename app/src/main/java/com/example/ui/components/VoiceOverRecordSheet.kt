@@ -67,6 +67,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.runtime.DisposableEffect
+import com.example.engine.AudioSynthesizerEngine
 import com.example.engine.RecordedVoiceOver
 import com.example.engine.VoiceOverRecorderEngine
 import com.example.util.MediaRecordingFeature
@@ -87,7 +89,8 @@ fun VoiceOverRecordSheet(
     playheadTimeMs: Long,
     onImportVoiceOver: (RecordedVoiceOver) -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    audioSynthesizerEngine: AudioSynthesizerEngine? = null
 ) {
     val context = LocalContext.current
     val micPermissionState = rememberMediaPermissionState(
@@ -105,6 +108,16 @@ fun VoiceOverRecordSheet(
     val liveWaveform by recorderEngine.liveWaveform.collectAsState()
     val currentDecibels by recorderEngine.currentDecibels.collectAsState()
     val lastRecordedVoiceOver by recorderEngine.lastRecordedVoiceOver.collectAsState()
+    val isHardwareMicActive by recorderEngine.isHardwareMicActive.collectAsState()
+    val recorderError by recorderEngine.recorderError.collectAsState()
+    val isPreviewPlaying = audioSynthesizerEngine?.isPlayingPreview?.collectAsState()?.value ?: false
+    val currentPreviewId = audioSynthesizerEngine?.currentTrackId?.collectAsState()?.value
+
+    DisposableEffect(Unit) {
+        onDispose {
+            audioSynthesizerEngine?.stop()
+        }
+    }
 
     Dialog(
         onDismissRequest = {
@@ -354,7 +367,11 @@ fun VoiceOverRecordSheet(
                                     )
                                     Text(
                                         text = if (isRecording) {
-                                            if (isPaused) "PAUSED" else "LIVE MIC"
+                                            when {
+                                                isPaused -> "PAUSED"
+                                                isHardwareMicActive -> "LIVE MIC • WAV"
+                                                else -> "MIC FALLBACK"
+                                            }
                                         } else "STANDBY",
                                         color = if (isRecording) CutRose else Color.Gray,
                                         fontSize = 10.sp,
@@ -447,14 +464,19 @@ fun VoiceOverRecordSheet(
 
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = if (isRecording) "Tap square to stop & review" else "Tap red button to start voice-over",
+                            text = recorderError ?: if (isRecording) {
+                                "Tap square to stop & review"
+                            } else {
+                                "Tap red button to start voice-over"
+                            },
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
+                            color = if (recorderError != null) PlayheadAmber else Color.Gray,
                             fontSize = 11.sp
                         )
                     } else {
                         // Post-Recording Review & Keep Area
                         val recorded = lastRecordedVoiceOver!!
+                        val isPreviewingThis = isPreviewPlaying && currentPreviewId == recorded.id
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = StudioSurfaceVariant),
@@ -485,10 +507,21 @@ fun VoiceOverRecordSheet(
                                         )
                                     }
                                     Text(
-                                        text = "${(recorded.durationMs / 1000f * 10).toInt() / 10f}s",
+                                        text = "${(recorded.durationMs / 1000f * 10).toInt() / 10f}s" +
+                                            if (recorded.fileUri != null) " • WAV" else "",
                                         color = MotionCyan,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 11.sp
+                                    )
+                                }
+
+                                if (recorded.fileUri == null) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = recorderError ?: "No microphone audio samples were captured.",
+                                        color = PlayheadAmber,
+                                        fontSize = 11.sp,
+                                        lineHeight = 14.sp
                                     )
                                 }
 
@@ -498,13 +531,50 @@ fun VoiceOverRecordSheet(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
+                                    if (recorded.fileUri != null && audioSynthesizerEngine != null) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                if (isPreviewingThis) {
+                                                    audioSynthesizerEngine.stop()
+                                                } else {
+                                                    audioSynthesizerEngine.playAudioUri(
+                                                        context = context,
+                                                        id = recorded.id,
+                                                        uriString = recorded.fileUri,
+                                                        durationMs = recorded.durationMs
+                                                    )
+                                                }
+                                            },
+                                            modifier = Modifier.height(44.dp).testTag("preview_voiceover_button"),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (isPreviewingThis) MotionCyan else StudioBorder
+                                            )
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isPreviewingThis) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                                contentDescription = if (isPreviewingThis) "Stop preview" else "Play preview",
+                                                tint = MotionCyan,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = if (isPreviewingThis) "Stop" else "Play",
+                                                fontSize = 11.sp,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+
                                     // Retake Button
                                     OutlinedButton(
                                         onClick = {
+                                            audioSynthesizerEngine?.stop()
                                             recorderEngine.cancelRecording()
                                             recorderEngine.startRecording(context)
                                         },
-                                        modifier = Modifier.weight(1f).height(40.dp).testTag("retake_voiceover_button"),
+                                        modifier = Modifier.weight(1f).height(44.dp).testTag("retake_voiceover_button"),
                                         shape = RoundedCornerShape(8.dp),
                                         border = BorderStroke(1.dp, StudioBorder)
                                     ) {
@@ -516,9 +586,10 @@ fun VoiceOverRecordSheet(
                                     // Insert & Save Button
                                     Button(
                                         onClick = {
+                                            audioSynthesizerEngine?.stop()
                                             onImportVoiceOver(recorded)
                                         },
-                                        modifier = Modifier.weight(1.5f).height(40.dp).testTag("insert_voiceover_button"),
+                                        modifier = Modifier.weight(1.4f).height(44.dp).testTag("insert_voiceover_button"),
                                         shape = RoundedCornerShape(8.dp),
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = MotionCyan,
@@ -527,7 +598,7 @@ fun VoiceOverRecordSheet(
                                     ) {
                                         Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(15.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Insert to Timeline", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("Insert", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
