@@ -76,12 +76,28 @@ jobs:
         run: |
           set -euo pipefail
           if [ ! -f "./app/google-services.json" ]; then
+            RAW_PAYLOAD=""
+            SOURCE_NAME=""
             if [ -n "${GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
-              printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | tr -d '[:space:]' | base64 --decode > ./app/google-services.json
-              echo "Restored app/google-services.json from GOOGLE_SERVICES_JSON_BASE64 secret."
+              RAW_PAYLOAD="$GOOGLE_SERVICES_JSON_BASE64"
+              SOURCE_NAME="GOOGLE_SERVICES_JSON_BASE64"
             elif [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then
-              printf '%s' "$GOOGLE_SERVICES_JSON" > ./app/google-services.json
-              echo "Restored app/google-services.json from GOOGLE_SERVICES_JSON secret."
+              RAW_PAYLOAD="$GOOGLE_SERVICES_JSON"
+              SOURCE_NAME="GOOGLE_SERVICES_JSON"
+            fi
+
+            if [ -n "$RAW_PAYLOAD" ]; then
+              TRIMMED="$(printf '%s' "$RAW_PAYLOAD" | sed -e 's/^[[:space:]]*//')"
+              if [[ "$TRIMMED" == \{* ]]; then
+                printf '%s' "$RAW_PAYLOAD" > ./app/google-services.json
+              else
+                printf '%s' "$RAW_PAYLOAD" | tr -d '[:space:]' | base64 --decode > ./app/google-services.json
+              fi
+              python3 -m json.tool ./app/google-services.json >/dev/null || {
+                echo "::error::$SOURCE_NAME secret did not decode to valid JSON for app/google-services.json."
+                exit 1
+              }
+              echo "Restored and validated app/google-services.json from $SOURCE_NAME secret."
             else
               echo "::warning::app/google-services.json not present in CI workspace and neither GOOGLE_SERVICES_JSON nor GOOGLE_SERVICES_JSON_BASE64 secret is set. Cloud Sign-In/Firestore will be disabled in this APK."
               echo "firebase_configured=false" >> "$GITHUB_OUTPUT"
@@ -132,6 +148,15 @@ jobs:
 
           "$KEYTOOL_BIN" -list -v -keystore ./debug.keystore -storepass android 2>/dev/null \
             | grep -E "Alias name:|SHA1:|SHA256:" || true
+          SHA1_HEX="$("$KEYTOOL_BIN" -list -v -keystore ./debug.keystore -alias androiddebugkey -storepass android -keypass android 2>/dev/null \
+            | sed -n 's/.*SHA1:[[:space:]]*//p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          if [ -f "./app/google-services.json" ] && [ -n "$SHA1_HEX" ]; then
+            if grep -qi "$SHA1_HEX" ./app/google-services.json; then
+              echo "Verified debug keystore SHA-1 matches certificate_hash in app/google-services.json."
+            else
+              echo "::warning::Active debug keystore SHA-1 ($SHA1_HEX) was not found in app/google-services.json. Google Sign-In may fail unless DEBUG_KEYSTORE_BASE64 matches the registered SHA-1."
+            fi
+          fi
           echo "Debug keystore verified."
 
       - name: Build debug APK
