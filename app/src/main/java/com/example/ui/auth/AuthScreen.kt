@@ -112,6 +112,11 @@ private fun resolveDefaultWebClientId(context: Context): String? {
     }
 }
 
+internal fun ensureFirebaseInitialized(context: Context): Boolean {
+    if (FirebaseApp.getApps(context).isNotEmpty()) return true
+    return runCatching { FirebaseApp.initializeApp(context) != null }.getOrDefault(false)
+}
+
 fun attemptAutoSignIn(
     context: Context,
     credentialManager: CredentialManager,
@@ -119,7 +124,7 @@ fun attemptAutoSignIn(
     onUnauthenticated: () -> Unit,
     scope: CoroutineScope
 ) {
-    if (FirebaseApp.getApps(context).isEmpty()) {
+    if (!ensureFirebaseInitialized(context)) {
         onUnauthenticated()
         return
     }
@@ -172,8 +177,12 @@ fun onGoogleSignInClicked(
     scope: CoroutineScope,
     onAuthCancelled: () -> Unit = {}
 ) {
-    if (FirebaseApp.getApps(context).isEmpty()) {
-        onAuthError("Firebase is not configured in this build (missing google-services.json). Use \"Continue without signing in\" for local studio editing.")
+    if (!ensureFirebaseInitialized(context)) {
+        onAuthError(
+            "Firebase is not configured in this APK build (missing google-services.json). " +
+                "Tap \"Continue without signing in\" for local editing, or include app/google-services.json " +
+                "(or the GOOGLE_SERVICES_JSON GitHub Actions secret) when building."
+        )
         return
     }
     val clientId = resolveDefaultWebClientId(context)

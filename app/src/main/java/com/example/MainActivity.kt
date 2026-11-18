@@ -26,6 +26,7 @@ import com.example.data.ProjectRepository
 import com.example.data.local.AppDatabase
 import com.example.data.remote.FirestoreProjectRepository
 import com.example.ui.EditorViewModel
+import com.example.ui.auth.ensureFirebaseInitialized
 import com.example.ui.auth.AuthScreen
 import com.example.ui.auth.signOutGoogle
 import com.example.ui.screens.EditorScreen
@@ -33,7 +34,6 @@ import com.example.ui.screens.LandingScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.util.configureAppCheck
 import com.google.firebase.Firebase
-import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
@@ -75,7 +75,7 @@ fun MotionCutAppRoot(
 ) {
     val context = LocalContext.current
     val resolvedAuth = remember(auth, context) {
-        auth ?: if (FirebaseApp.getApps(context).isNotEmpty()) Firebase.auth else null
+        auth ?: if (ensureFirebaseInitialized(context)) Firebase.auth else null
     }
     val currentUser by (resolvedAuth?.authStateFlow() ?: flowOf(null))
         .collectAsStateWithLifecycle(initialValue = resolvedAuth?.currentUser)

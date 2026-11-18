@@ -68,6 +68,7 @@ jobs:
           key: motioncut-ci-debug-keystore-${{ github.repository_id }}-v1
 
       - name: Restore Firebase config (optional secret)
+        id: firebase_config
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
@@ -82,9 +83,12 @@ jobs:
               printf '%s' "$GOOGLE_SERVICES_JSON" > ./app/google-services.json
               echo "Restored app/google-services.json from GOOGLE_SERVICES_JSON secret."
             else
-              echo "app/google-services.json not present in CI workspace (building with MissingGoogleServicesStrategy.WARN)."
+              echo "::warning::app/google-services.json not present in CI workspace and neither GOOGLE_SERVICES_JSON nor GOOGLE_SERVICES_JSON_BASE64 secret is set. Cloud Sign-In/Firestore will be disabled in this APK."
+              echo "firebase_configured=false" >> "$GITHUB_OUTPUT"
+              exit 0
             fi
           fi
+          echo "firebase_configured=true" >> "$GITHUB_OUTPUT"
 
       - name: Restore or generate debug keystore
         env:
@@ -238,6 +242,10 @@ jobs:
           - **Notice:** This APK is intended for testing only. It is signed with the project's consistent debug keystore (`debug.keystore.base64`).
           EOF
 
+          if [ "${{ steps.firebase_config.outputs.firebase_configured }}" != "true" ]; then
+            echo "- **Firebase Note:** \`app/google-services.json\` was not present during this CI build. Use **Continue without signing in** in the app, or set the \`GOOGLE_SERVICES_JSON\` (or \`GOOGLE_SERVICES_JSON_BASE64\`) and \`DEBUG_KEYSTORE_BASE64\` GitHub Actions secrets." >> "$NOTES_FILE"
+          fi
+
           gh release create "$RELEASE_TAG" "$ASSET_PATH" \
             --title "$RELEASE_TITLE" \
             --target "$GITHUB_SHA" \
@@ -249,6 +257,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ASSET_NAME: ${{ steps.prepare_asset.outputs.asset_name }}
+          FIREBASE_CONFIGURED: ${{ steps.firebase_config.outputs.firebase_configured }}
         shell: bash
         run: |
           set -euo pipefail
@@ -270,6 +279,9 @@ jobs:
               echo "- **Release Page:** ${RELEASE_URL}"
               echo "- **APK Asset:** \`${ASSET_NAME}\` (download directly from the release **Assets** section on your phone)"
               echo "- **Backup Artifact:** GitHub Actions artifact \`app-debug-apk\` is also available on this run."
+              if [ "${FIREBASE_CONFIGURED:-false}" != "true" ]; then
+                echo "- **Warning (Firebase Missing):** \`app/google-services.json\` was not found in CI. Add \`GOOGLE_SERVICES_JSON\` (or \`GOOGLE_SERVICES_JSON_BASE64\`) and \`DEBUG_KEYSTORE_BASE64\` to Repository Secrets to enable Google Sign-In & Firestore in CI APKs."
+              fi
             } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "::warning::GitHub Release publishing failed, but the debug APK build succeeded and the Actions artifact 'app-debug-apk' remains available."

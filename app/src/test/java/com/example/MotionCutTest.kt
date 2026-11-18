@@ -1433,4 +1433,18 @@ class MotionCutTest {
         audioPlayer.sync(repo.currentProject.value, isPlaying = false, currentTimeMs = 500L)
         audioPlayer.releaseAll()
     }
+
+    @Test
+    fun testFirebaseResourcesAndInitializationConfigured() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val dbIdRes = app.resources.getIdentifier("firestore_database_id", "string", app.packageName)
+        assertTrue("Expected firestore_database_id resource", dbIdRes != 0)
+        assertTrue(app.getString(dbIdRes).isNotBlank())
+
+        val googleAppIdRes = app.resources.getIdentifier("google_app_id", "string", app.packageName)
+        val clientIdRes = app.resources.getIdentifier("default_web_client_id", "string", app.packageName)
+        assertTrue("Expected google_app_id generated from google-services.json", googleAppIdRes != 0)
+        assertTrue("Expected default_web_client_id generated from google-services.json", clientIdRes != 0)
+        assertTrue(com.example.ui.auth.ensureFirebaseInitialized(app))
+    }
 }
